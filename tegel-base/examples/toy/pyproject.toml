@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tegel-toy"
+version = "0.1.0"
+description = "Reference incarnation: a synthetic array record and a JSON sidecar."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["tegel-core"]
+
+[project.entry-points."tegel.resource_types"]
+toy-record = "tegel.toy.dataserver:RECORD"
+
+[project.entry-points."tegel.extractors"]
+toy-record = "tegel.toy.dataserver:ToyExtractor"
+
+[project.entry-points."tegel.readers"]
+toy-record = "tegel.toy.dataserver:ToyReader"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/tegel"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "schema", "tests", "README.md", "LICENSE", "pyproject.toml"]

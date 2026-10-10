@@ -1,0 +1,11 @@
+id: https://w3id.org/tegel/toy/profile
+name: toy records
+schema: record.yaml
+search:
+  - channel
+properties:
+  - channel
+entity:
+  name: sample_name
+  identifier: uuid
+  dateCreated: recorded

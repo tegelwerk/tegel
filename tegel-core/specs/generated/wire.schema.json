@@ -1,0 +1,796 @@
+{
+  "Capabilities": {
+    "$defs": {
+      "InstalledPlugin": {
+        "description": "One entry point the server loaded.",
+        "properties": {
+          "group": {
+            "minLength": 1,
+            "title": "Group",
+            "type": "string"
+          },
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "group",
+          "name",
+          "version"
+        ],
+        "title": "InstalledPlugin",
+        "type": "object"
+      }
+    },
+    "description": "What a server implements, returned by ``GET /capabilities``.",
+    "properties": {
+      "spec_version": {
+        "default": "0.1.0",
+        "title": "Spec Version",
+        "type": "string"
+      },
+      "server_version": {
+        "minLength": 1,
+        "title": "Server Version",
+        "type": "string"
+      },
+      "plugins": {
+        "items": {
+          "$ref": "#/$defs/InstalledPlugin"
+        },
+        "title": "Plugins",
+        "type": "array"
+      },
+      "search_document": {
+        "default": "ro-crate",
+        "title": "Search Document",
+        "type": "string"
+      },
+      "auth": {
+        "default": "keycloak",
+        "title": "Auth",
+        "type": "string"
+      }
+    },
+    "required": [
+      "server_version"
+    ],
+    "title": "Capabilities",
+    "type": "object"
+  },
+  "InstalledPlugin": {
+    "description": "One entry point the server loaded.",
+    "properties": {
+      "group": {
+        "minLength": 1,
+        "title": "Group",
+        "type": "string"
+      },
+      "name": {
+        "minLength": 1,
+        "title": "Name",
+        "type": "string"
+      },
+      "version": {
+        "minLength": 1,
+        "title": "Version",
+        "type": "string"
+      }
+    },
+    "required": [
+      "group",
+      "name",
+      "version"
+    ],
+    "title": "InstalledPlugin",
+    "type": "object"
+  },
+  "Principal": {
+    "description": "Caller identity after the auth provider accepts a bearer token.",
+    "properties": {
+      "subject": {
+        "minLength": 1,
+        "title": "Subject",
+        "type": "string"
+      }
+    },
+    "required": [
+      "subject"
+    ],
+    "title": "Principal",
+    "type": "object"
+  },
+  "Provenance": {
+    "description": "How a catalog entry was produced.",
+    "properties": {
+      "plugin_id": {
+        "minLength": 1,
+        "title": "Plugin Id",
+        "type": "string"
+      },
+      "source_name": {
+        "minLength": 1,
+        "title": "Source Name",
+        "type": "string"
+      }
+    },
+    "required": [
+      "plugin_id",
+      "source_name"
+    ],
+    "title": "Provenance",
+    "type": "object"
+  },
+  "DataDescriptor": {
+    "$defs": {
+      "StructureFamily": {
+        "description": "Tiled structure families a reader may return.",
+        "enum": [
+          "array",
+          "table",
+          "container",
+          "sparse",
+          "bytes"
+        ],
+        "title": "StructureFamily",
+        "type": "string"
+      }
+    },
+    "description": "How to read a resource without implying the bytes are loaded.",
+    "properties": {
+      "family": {
+        "$ref": "#/$defs/StructureFamily"
+      },
+      "media_type": {
+        "minLength": 1,
+        "title": "Media Type",
+        "type": "string"
+      },
+      "content_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Content Url"
+      },
+      "shape": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Shape"
+      },
+      "chunks": {
+        "anyOf": [
+          {
+            "items": {
+              "items": {
+                "type": "integer"
+              },
+              "type": "array"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Chunks"
+      },
+      "data_type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Data Type"
+      }
+    },
+    "required": [
+      "family",
+      "media_type"
+    ],
+    "title": "DataDescriptor",
+    "type": "object"
+  },
+  "ErrorBody": {
+    "description": "Error body used by the HTTP API.",
+    "properties": {
+      "detail": {
+        "title": "Detail",
+        "type": "string"
+      }
+    },
+    "required": [
+      "detail"
+    ],
+    "title": "ErrorBody",
+    "type": "object"
+  },
+  "Relation": {
+    "description": "A directed link stored by ETL and returned on read.",
+    "properties": {
+      "rel": {
+        "minLength": 1,
+        "title": "Rel",
+        "type": "string"
+      },
+      "target": {
+        "minLength": 1,
+        "title": "Target",
+        "type": "string"
+      }
+    },
+    "required": [
+      "rel",
+      "target"
+    ],
+    "title": "Relation",
+    "type": "object"
+  },
+  "Resource": {
+    "$defs": {
+      "Provenance": {
+        "description": "How a catalog entry was produced.",
+        "properties": {
+          "plugin_id": {
+            "minLength": 1,
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "source_name": {
+            "minLength": 1,
+            "title": "Source Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "source_name"
+        ],
+        "title": "Provenance",
+        "type": "object"
+      },
+      "Relation": {
+        "description": "A directed link stored by ETL and returned on read.",
+        "properties": {
+          "rel": {
+            "minLength": 1,
+            "title": "Rel",
+            "type": "string"
+          },
+          "target": {
+            "minLength": 1,
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rel",
+          "target"
+        ],
+        "title": "Relation",
+        "type": "object"
+      }
+    },
+    "description": "One catalog record served by the data server.",
+    "properties": {
+      "id": {
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "uri": {
+        "minLength": 1,
+        "title": "Uri",
+        "type": "string"
+      },
+      "type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Type"
+      },
+      "type_version": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Type Version"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Name"
+      },
+      "identifier": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Identifier"
+      },
+      "date_created": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Date Created"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "title": "Metadata",
+        "type": "object"
+      },
+      "relations": {
+        "items": {
+          "$ref": "#/$defs/Relation"
+        },
+        "title": "Relations",
+        "type": "array"
+      },
+      "provenance": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Provenance"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "required": [
+      "id",
+      "uri"
+    ],
+    "title": "Resource",
+    "type": "object"
+  },
+  "ResourcePage": {
+    "$defs": {
+      "ResourceRef": {
+        "description": "A catalog entry in a browse listing.",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "uri": {
+            "minLength": 1,
+            "title": "Uri",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Type"
+          }
+        },
+        "required": [
+          "id",
+          "uri"
+        ],
+        "title": "ResourceRef",
+        "type": "object"
+      }
+    },
+    "description": "Body of ``GET /resources``.",
+    "properties": {
+      "resources": {
+        "items": {
+          "$ref": "#/$defs/ResourceRef"
+        },
+        "title": "Resources",
+        "type": "array"
+      },
+      "count": {
+        "minimum": 0,
+        "title": "Count",
+        "type": "integer"
+      }
+    },
+    "required": [
+      "count"
+    ],
+    "title": "ResourcePage",
+    "type": "object"
+  },
+  "ResourceRef": {
+    "description": "A catalog entry in a browse listing.",
+    "properties": {
+      "id": {
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "uri": {
+        "minLength": 1,
+        "title": "Uri",
+        "type": "string"
+      },
+      "type": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Type"
+      }
+    },
+    "required": [
+      "id",
+      "uri"
+    ],
+    "title": "ResourceRef",
+    "type": "object"
+  },
+  "SearchHit": {
+    "description": "One match, independent of the on-the-wire document.",
+    "properties": {
+      "uri": {
+        "minLength": 1,
+        "title": "Uri",
+        "type": "string"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Name"
+      },
+      "identifier": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Identifier"
+      },
+      "date_created": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Date Created"
+      },
+      "properties": {
+        "type": "object",
+        "additionalProperties": true,
+        "title": "Properties"
+      }
+    },
+    "required": [
+      "uri"
+    ],
+    "title": "SearchHit",
+    "type": "object"
+  },
+  "SearchQuery": {
+    "description": "Exact-match filters. Keys must be fields on the active profile.",
+    "properties": {
+      "filters": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "title": "Filters",
+        "type": "object"
+      }
+    },
+    "title": "SearchQuery",
+    "type": "object"
+  },
+  "SearchResult": {
+    "$defs": {
+      "SearchHit": {
+        "description": "One match, independent of the on-the-wire document.",
+        "properties": {
+          "uri": {
+            "minLength": 1,
+            "title": "Uri",
+            "type": "string"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Name"
+          },
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Identifier"
+          },
+          "date_created": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Date Created"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": true,
+            "title": "Properties"
+          }
+        },
+        "required": [
+          "uri"
+        ],
+        "title": "SearchHit",
+        "type": "object"
+      }
+    },
+    "description": "Parsed search response.\n\n``document`` is ``ro-crate`` for the reference representation, or another\ntoken advertised by ``Capabilities.search_document``.",
+    "properties": {
+      "document": {
+        "minLength": 1,
+        "title": "Document",
+        "type": "string"
+      },
+      "count": {
+        "minimum": 0,
+        "title": "Count",
+        "type": "integer"
+      },
+      "hits": {
+        "items": {
+          "$ref": "#/$defs/SearchHit"
+        },
+        "title": "Hits",
+        "type": "array"
+      }
+    },
+    "required": [
+      "document",
+      "count"
+    ],
+    "title": "SearchResult",
+    "type": "object"
+  },
+  "ResourceType": {
+    "description": "A named type an incarnation registers.\n\n``metadata_schema`` is a LinkML schema id. ``parent`` is an optional\nfallback type name.",
+    "properties": {
+      "name": {
+        "minLength": 1,
+        "title": "Name",
+        "type": "string"
+      },
+      "version": {
+        "minLength": 1,
+        "title": "Version",
+        "type": "string"
+      },
+      "metadata_schema": {
+        "minLength": 1,
+        "title": "Metadata Schema",
+        "type": "string"
+      },
+      "parent": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Parent"
+      }
+    },
+    "required": [
+      "name",
+      "version",
+      "metadata_schema"
+    ],
+    "title": "ResourceType",
+    "type": "object"
+  },
+  "SearchProfile": {
+    "$defs": {
+      "ProfileEntity": {
+        "additionalProperties": false,
+        "description": "Metadata keys copied onto a search-result dataset.",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "identifier": {
+            "minLength": 1,
+            "title": "Identifier",
+            "type": "string"
+          },
+          "dateCreated": {
+            "minLength": 1,
+            "title": "Datecreated",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "identifier",
+          "dateCreated"
+        ],
+        "title": "ProfileEntity",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Which schema fields are searchable and which appear in the search document.",
+    "properties": {
+      "id": {
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "name": {
+        "minLength": 1,
+        "title": "Name",
+        "type": "string"
+      },
+      "schema": {
+        "minLength": 1,
+        "title": "Schema",
+        "type": "string"
+      },
+      "search": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Search",
+        "type": "array"
+      },
+      "properties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "title": "Properties"
+      },
+      "entity": {
+        "$ref": "#/$defs/ProfileEntity"
+      }
+    },
+    "required": [
+      "id",
+      "name",
+      "schema",
+      "search",
+      "properties",
+      "entity"
+    ],
+    "title": "SearchProfile",
+    "type": "object"
+  },
+  "ProcessedDataPackage": {
+    "description": "Payload path, metadata, and metrics returned by an extractor.",
+    "properties": {
+      "payload_path": {
+        "minLength": 1,
+        "title": "Payload Path",
+        "type": "string"
+      },
+      "metadata": {
+        "additionalProperties": true,
+        "title": "Metadata",
+        "type": "object"
+      },
+      "metrics": {
+        "additionalProperties": {
+          "type": "number"
+        },
+        "title": "Metrics",
+        "type": "object"
+      }
+    },
+    "required": [
+      "payload_path",
+      "metadata",
+      "metrics"
+    ],
+    "title": "ProcessedDataPackage",
+    "type": "object"
+  }
+}

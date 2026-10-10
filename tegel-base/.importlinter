@@ -1,0 +1,35 @@
+[importlinter]
+root_packages =
+    tegel.dataserver
+    tegel.actions
+    tegel.dash
+    tegel.core
+    tegel.toy
+include_external_packages = True
+
+[importlinter:contract:on-core]
+name = Reference servers sit on tegel.core
+type = layers
+layers =
+    tegel.dataserver | tegel.actions | tegel.dash
+    tegel.core
+
+[importlinter:contract:apart]
+name = Reference servers do not import each other
+type = independence
+modules =
+    tegel.dataserver
+    tegel.actions
+    tegel.dash
+
+[importlinter:contract:no-incarnation]
+name = The base does not import an incarnation
+type = forbidden
+source_modules =
+    tegel.dataserver
+    tegel.actions
+    tegel.dash
+forbidden_modules =
+    tegel.toy
+# tegel.mx and tegel.xfm are not installable modules. tests/test_vocabulary.py
+# rejects those import names under packages/.

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tegel-dataserver"
+version = "0.1.0"
+description = "Reference read-only data server. It launches Tiled from an incarnation spec."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "tegel-core",
+    "fastapi",
+    "uvicorn",
+    "pyyaml",
+    "pyjwt[crypto]",
+    "tiled[server]>=0.2.15",
+]
+
+[project.entry-points."tegel.auth"]
+keycloak = "tegel.dataserver.auth.keycloak:KeycloakAuth"
+
+[project.entry-points."tegel.storage"]
+filesystem = "tegel.dataserver.storage.filesystem:FileStorage"
+
+[project.entry-points."tegel.index"]
+tiled = "tegel.dataserver.index.tiled_catalog:TiledCatalogIndex"
+
+[project.entry-points.pytest11]
+tegel = "tegel.dataserver.testing.plugin"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/tegel"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "tests", "README.md", "LICENSE", "pyproject.toml"]

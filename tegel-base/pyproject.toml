@@ -1,0 +1,45 @@
+[project]
+name = "tegel-base"
+version = "0.1.0"
+description = "Reference servers for Tegel. Not an installable library and not a production deployment."
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["packages/dataserver", "packages/actions", "packages/dash", "examples/toy"]
+
+[tool.uv.sources]
+tegel-core = { path = "../tegel-core", editable = true }
+tegel-dataserver = { workspace = true }
+tegel-actions = { workspace = true }
+tegel-dash = { workspace = true }
+tegel-toy = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "tegel-dataserver",
+    "tegel-actions",
+    "tegel-dash",
+    "tegel-toy",
+    "pytest>=8",
+    "ruff>=0.8",
+    "import-linter>=2",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["packages", "examples", "tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["packages", "examples", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tegel"]

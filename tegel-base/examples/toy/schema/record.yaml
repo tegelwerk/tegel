@@ -1,0 +1,28 @@
+id: https://w3id.org/tegel/toy/record
+name: toy_record
+classes:
+  Record:
+    tree_root: true
+    attributes:
+      sample_name:
+        range: string
+      uuid:
+        range: string
+      recorded:
+        range: string
+      channel:
+        range: string
+      plugin_id:
+        range: string
+      source_name:
+        range: string
+      key:
+        range: string
+      payload_uri:
+        range: string
+      resource_type:
+        range: string
+      resource_type_version:
+        range: string
+      relations:
+        range: string
