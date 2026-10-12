@@ -12,7 +12,7 @@ cp edge.env.example edge.env
 ./up
 ```
 
-`./up` derives the Caddy listen port from `PUBLIC_ORIGIN` and starts the stack. The data server, the ETL worker, and the catalog updater use the image built from [example_processed_xfm_data/Containerfile](../../example_processed_xfm_data/Containerfile).
+`./up` derives the Caddy listen port from `PUBLIC_ORIGIN` and starts the stack. The data server, the ETL worker, and the catalog updater use the image built from [xfm_ssrl_tegel/Containerfile](../../../xfm_ssrl_tegel/Containerfile).
 
 Keycloak, Prefect, and the catalog live in named volumes or in `TEGEL_OUTPUT`. Credentials are written to `$TEGEL_OUTPUT/credentials` on first run. That directory stays outside the git checkout.
 
@@ -22,4 +22,4 @@ Prefect serves two deployments. The ingest flow stages records, the catalog upda
 podman compose exec etl python -m tegel.actions.ingest directories /records
 ```
 
-The local [start_all.sh](../../example_processed_xfm_data/start_all.sh) is unchanged and does not use this edge.
+The local [start_all.sh](../../../xfm_ssrl_tegel/dataserver/start_all.sh) is unchanged and does not use this edge.

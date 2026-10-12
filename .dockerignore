@@ -12,6 +12,6 @@
 **/.env.*
 **/credentials
 **/token
-example_processed_xfm_data/tests
+xfm_ssrl_tegel/dataserver/tests
 tegel-base/deploy/edge.env
 tegel-base/deploy/tls

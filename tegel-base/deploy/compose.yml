@@ -13,8 +13,8 @@ volumes:
 x-app: &app
   image: tegel-dataserver:local
   build:
-    context: ../..
-    dockerfile: example_processed_xfm_data/Containerfile
+    context: ../../..
+    dockerfile: xfm_ssrl_tegel/Containerfile
 
 services:
   caddy:
