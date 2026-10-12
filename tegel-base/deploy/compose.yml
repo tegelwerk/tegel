@@ -1,0 +1,189 @@
+# Ports, the public origin, and the path prefixes come from edge.env.
+# Start with ./up so PUBLIC_HOST and CADDY_LISTEN are derived from PUBLIC_ORIGIN.
+
+name: tegel
+
+networks:
+  edge: {}
+
+volumes:
+  keycloak_data: {}
+  prefect_data: {}
+
+x-app: &app
+  image: tegel-dataserver:local
+  build:
+    context: ../..
+    dockerfile: example_processed_xfm_data/Containerfile
+
+services:
+  caddy:
+    image: docker.io/library/caddy:2
+    networks:
+      edge:
+        aliases:
+          - ${PUBLIC_HOST}
+    env_file:
+      - edge.env
+    environment:
+      CADDY_LISTEN: ${CADDY_LISTEN}
+    ports:
+      - "${TEGEL_BIND}:${CADDY_LISTEN}"
+    volumes:
+      - ./Caddyfile:/edge/Caddyfile:ro
+      - ./caddy-entrypoint.sh:/edge/caddy-entrypoint.sh:ro
+      - ./tls:/certs:ro
+    entrypoint: ["/bin/sh", "/edge/caddy-entrypoint.sh"]
+
+  credentials:
+    <<: *app
+    networks: [edge]
+    environment:
+      TEGEL_OUTPUT: /output
+    volumes:
+      - ${TEGEL_OUTPUT}:/output
+    command: ["python", "-m", "tegel.actions.credentials"]
+    restart: "no"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.0
+    networks: [edge]
+    env_file:
+      - edge.env
+    environment:
+      KC_HTTP_ENABLED: "true"
+      KC_HTTP_RELATIVE_PATH: ${PATH_AUTH}
+      KC_HOSTNAME: ${PUBLIC_ORIGIN}${PATH_AUTH}
+      KC_PROXY_HEADERS: xforwarded
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ${TEGEL_OUTPUT}:/output
+      - ./keycloak-entrypoint.sh:/edge/keycloak-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/edge/keycloak-entrypoint.sh"]
+    depends_on:
+      credentials:
+        condition: service_completed_successfully
+
+  realm-init:
+    <<: *app
+    networks: [edge]
+    env_file:
+      - edge.env
+    environment:
+      TEGEL_OUTPUT: /output
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}
+      PATH_DATA: ${PATH_DATA}
+      KEYCLOAK_INTERNAL: http://keycloak:${PORT_AUTH}${PATH_AUTH}
+    volumes:
+      - ${TEGEL_OUTPUT}:/output
+    command: ["python", "-m", "tegel.actions.realm"]
+    restart: "no"
+    depends_on:
+      keycloak:
+        condition: service_started
+
+  prefect:
+    image: docker.io/prefecthq/prefect:3-python3.11
+    networks: [edge]
+    env_file:
+      - edge.env
+    environment:
+      PREFECT_HOME: /var/prefect
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_SERVER_API_PORT: ${PORT_PREFECT}
+      PREFECT_UI_API_URL: ${PUBLIC_ORIGIN}${PATH_PREFECT}/api
+    command:
+      - prefect
+      - server
+      - start
+      - --host
+      - 0.0.0.0
+      - --port
+      - ${PORT_PREFECT}
+    volumes:
+      - prefect_data:/var/prefect
+
+  dataserver:
+    <<: *app
+    networks: [edge]
+    env_file:
+      - edge.env
+    environment:
+      TEGEL_OUTPUT: /output
+      TEGEL_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN}${PATH_DATA}
+      TEGEL_OIDC_ISSUER: ${PUBLIC_ORIGIN}${PATH_AUTH}/realms/tegel
+      TEGEL_OIDC_AUDIENCE: tegel
+      TEGEL_OIDC_CLIENT_ID: tegel
+      TEGEL_ROOT_PATH: ${PATH_DATA}
+      TEGEL_HOST: 0.0.0.0
+      TEGEL_PORT: ${PORT_DATA}
+      TEGEL_PROFILE: /spec/${TEGEL_PROFILE_NAME}
+      TEGEL_CATALOG_URI: sqlite:////output/catalog.db
+    volumes:
+      - ${TEGEL_OUTPUT}:/output
+      - ${TEGEL_SPEC_DIR}:/spec:ro
+      - ${TEGEL_RECORDS}:/records:ro
+      - ./dataserver-entrypoint.sh:/edge/dataserver-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/edge/dataserver-entrypoint.sh"]
+    depends_on:
+      realm-init:
+        condition: service_completed_successfully
+      caddy:
+        condition: service_started
+
+  catalog-updater:
+    <<: *app
+    networks: [edge]
+    environment:
+      TEGEL_OUTPUT: /output
+      PREFECT_API_URL: http://prefect:${PORT_PREFECT}/api
+    volumes:
+      - ${TEGEL_OUTPUT}:/output
+    command: ["python", "-m", "tegel.actions.update"]
+    depends_on:
+      - prefect
+
+  etl:
+    <<: *app
+    networks: [edge]
+    env_file:
+      - edge.env
+    environment:
+      TEGEL_OUTPUT: /output
+      TEGEL_RECORDS: /records
+      TEGEL_OIDC_ISSUER: ${PUBLIC_ORIGIN}${PATH_AUTH}/realms/tegel
+      TEGEL_OIDC_CLIENT_ID: tegel
+      TEGEL_REFRESH_URL: http://dataserver:${PORT_DATA}/refresh-catalog
+      PREFECT_API_URL: http://prefect:${PORT_PREFECT}/api
+    volumes:
+      - ${TEGEL_OUTPUT}:/output
+      - ${TEGEL_RECORDS}:/records:ro
+      - ./worker-entrypoint.sh:/edge/worker-entrypoint.sh:ro
+    entrypoint: ["/bin/sh", "/edge/worker-entrypoint.sh"]
+    command: ["python", "-m", "tegel.actions.ingest"]
+    depends_on:
+      realm-init:
+        condition: service_completed_successfully
+      prefect:
+        condition: service_started
+      dataserver:
+        condition: service_started
+
+  ingest:
+    <<: *app
+    networks: [edge]
+    environment:
+      TEGEL_RECORDS: /records
+      PREFECT_API_URL: http://prefect:${PORT_PREFECT}/api
+    volumes:
+      - ${TEGEL_RECORDS}:/records:ro
+    command: ["python", "-m", "tegel.actions.ingest", "directories", "/records"]
+    restart: "no"
+    depends_on:
+      etl:
+        condition: service_started
+      catalog-updater:
+        condition: service_started
+      dataserver:
+        condition: service_started

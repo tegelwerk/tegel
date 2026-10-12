@@ -1,0 +1,11 @@
+handle {$PATH_AUTH}* {
+	reverse_proxy keycloak:{$PORT_AUTH}
+}
+
+handle_path {$PATH_DATA}* {
+	reverse_proxy dataserver:{$PORT_DATA}
+}
+
+handle_path {$PATH_PREFECT}* {
+	reverse_proxy prefect:{$PORT_PREFECT}
+}

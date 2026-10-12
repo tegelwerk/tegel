@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from tegel.core.client.data import DataClient
@@ -12,9 +13,63 @@ from tegel.dataserver.app import create_app
 from tegel.dataserver.catalog import insert_record
 from tegel.dataserver.config import ServerConfig
 from tegel.dataserver.testing import OIDCIssuer
+from tegel.xfm.launch import _output_directory
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "processed-leaf.json"
 PROFILE = Path(__file__).resolve().parents[1] / "schema" / "profile.yaml"
+
+
+def test_dot_output_is_allowed_only_when_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    assert _output_directory(Path(".")) == Path(".")
+    (tmp_path / "note").write_text("x", encoding="utf-8")
+    with pytest.raises(SystemExit, match="only when the current directory is empty"):
+        _output_directory(Path("."))
+
+
+def test_named_output_directory_is_created(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    output = _output_directory(Path("run"))
+    assert output == Path("run")
+    assert output.is_dir()
+
+
+def test_processed_cache_crate_becomes_a_record(tmp_path: Path) -> None:
+    crate = tmp_path / "ProcessedCache" / "aapl-P1-leaf1-10serp"
+    crate.mkdir(parents=True)
+    metadata = crate / "ro-crate-metadata.json"
+    metadata.write_text(
+        json.dumps(
+            {
+                "@graph": [
+                    {
+                        "@id": "./",
+                        "sample_code": "AAPL-P1-leaf1",
+                        "technique": "xrf",
+                        "dateCreated": "2024-05-01T00:00:00Z",
+                    },
+                    {"@id": "masked-clr.zarr/", "isDesignated": True},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (crate / "lambda-record.yaml").write_text("beam_energy_keV: 10\n", encoding="utf-8")
+    raw = tmp_path / "DataCache" / "leaf" / "ro-crate-metadata.json"
+    raw.parent.mkdir(parents=True)
+    raw.write_text(metadata.read_text(encoding="utf-8"), encoding="utf-8")
+    registry = Registry()
+    plugin = registry.extractor_for(str(metadata))
+    assert plugin.validate(str(raw)) is False
+    package = check_package(plugin, plugin.process(str(metadata), {}))
+    assert package.metadata["key"] == "ProcessedCache--aapl-P1-leaf1-10serp"
+    assert package.metadata["sample_code"] == "AAPL-P1-leaf1"
+    assert package.metadata["kind"] == "mca_fit"
+    assert package.metadata["beam_energy_kev"] == "10"
+    assert package.metadata["acquired"] == "2024-05-01"
+    assert package.metadata["payload_uri"].endswith("masked-clr.zarr")
 
 
 def test_entry_point_claims_only_processed_records(tmp_path: Path) -> None:

@@ -1,0 +1,17 @@
+**/.venv
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.ruff_cache
+**/.git
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/var
+**/.env
+**/.env.*
+**/credentials
+**/token
+example_processed_xfm_data/tests
+tegel-base/deploy/edge.env
+tegel-base/deploy/tls

@@ -11,3 +11,5 @@ build/
 var/
 .env
 .env.*
+edge.env
+credentials

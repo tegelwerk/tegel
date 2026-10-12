@@ -5,12 +5,17 @@ build-backend = "hatchling.build"
 [project]
 name = "tegel-actions"
 version = "0.1.0"
-description = "Placeholder. Will be implemented after the data server."
+description = "Prefect flows that stage records, merge the catalog, and refresh the data server."
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["tegel-core"]
+dependencies = [
+    "tegel-core",
+    "httpx",
+    "prefect>=3,<4",
+    "tiled>=0.2.15",
+]
 
 [tool.hatch.build.targets.wheel]
 only-include = ["src/tegel"]

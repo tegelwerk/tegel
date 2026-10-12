@@ -1,4 +1,8 @@
-"""Read API mounted on the Tiled application."""
+"""Read API mounted on the Tiled application.
+
+``POST /refresh-catalog`` reopens the catalog after an external merge. It does
+not write a record, and no route calls ``insert_record``.
+"""
 
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ from tegel.dataserver.version import __version__
 
 
 def mount_routes(app: FastAPI) -> None:
-    """Add the read routes. There is no write route."""
+    """Add the read routes and the catalog refresh."""
 
     def principal(request: Request) -> None:
         try:
@@ -131,3 +135,25 @@ def mount_routes(app: FastAPI) -> None:
         finally:
             handle.close()
         return Response(content=payload, media_type=descriptor.media_type)
+
+    @app.post("/refresh-catalog")
+    async def refresh_catalog(request: Request) -> dict[str, bool]:
+        principal(request)
+        await reopen_catalog(request)
+        return {"refreshed": True}
+
+
+async def reopen_catalog(request: Request) -> None:
+    """Dispose Tiled's pooled catalog connections and open a new pool."""
+    from tiled.server.connection_pool import (
+        close_database_connection_pool,
+        get_database_engine,
+    )
+
+    tree = request.app.state.root_tree
+    context = getattr(tree, "context", None)
+    settings = getattr(context, "database_settings", None)
+    if context is None or settings is None:
+        raise HTTPException(status_code=409, detail="Catalog is not database-backed")
+    await close_database_connection_pool(settings)
+    context.engine = get_database_engine(settings)

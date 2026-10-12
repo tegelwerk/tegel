@@ -14,7 +14,6 @@ from tegel.core.contracts.types import ResourceType, linkml_attribute_names
 from tegel.core.plugins import Extractor, ProcessedDataPackage
 
 SCHEMA_ID = "https://w3id.org/tegel/xfm/processed"
-SCHEMA_PATH = Path(__file__).resolve().parents[3] / "schema" / "measurement.yaml"
 
 RECORD = ResourceType(
     name="xfm.processed",
@@ -31,6 +30,9 @@ class ProcessedExtractor(Extractor):
         return "xfm-processed-v1"
 
     def validate(self, input_path: str) -> bool:
+        path = Path(input_path)
+        if path.name == "ro-crate-metadata.json":
+            return _cache_name(path) == "ProcessedCache" and _crate_root(path) is not None
         body = _object(input_path)
         return (
             body is not None
@@ -42,7 +44,10 @@ class ProcessedExtractor(Extractor):
 
     def process(self, input_path: str, options: dict[str, Any]) -> ProcessedDataPackage:
         path = Path(input_path)
-        body = _object(input_path)
+        if path.name == "ro-crate-metadata.json":
+            body = _record_from_crate(path)
+        else:
+            body = _object(input_path)
         if body is None:
             raise ValueError("processed measurement record is not a JSON object")
         key = options.get("key")
@@ -97,11 +102,131 @@ class ProcessedReader:
         )
 
 
+def _schema_path() -> Path:
+    relative = Path("schema") / "measurement.yaml"
+    if relative.is_file():
+        return relative
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "schema" / "measurement.yaml"
+        if candidate.is_file():
+            return candidate
+    raise ValueError("schema/measurement.yaml was not found")
+
+
 def _schema() -> dict[str, Any]:
-    loaded = yaml.safe_load(SCHEMA_PATH.read_text(encoding="utf-8"))
+    loaded = yaml.safe_load(_schema_path().read_text(encoding="utf-8"))
     if not isinstance(loaded, dict):
         raise ValueError("measurement schema must be a YAML mapping")
     return loaded
+
+
+def _cache_name(metadata_path: Path) -> str:
+    return metadata_path.parent.parent.name
+
+
+def _crate_root(metadata_path: Path) -> dict[str, Any] | None:
+    body = _object(str(metadata_path))
+    graph = body.get("@graph") if isinstance(body, dict) else None
+    if not isinstance(graph, list):
+        return None
+    for entity in graph:
+        if isinstance(entity, dict) and entity.get("@id") == "./":
+            return entity
+    return None
+
+
+def _record_from_crate(metadata_path: Path) -> dict[str, Any]:
+    crate_dir = metadata_path.parent
+    root = _crate_root(metadata_path)
+    if root is None:
+        raise ValueError("processed crate has no root dataset")
+    fuller_path = crate_dir / "lambda-record.yaml"
+    fuller: dict[str, Any] = {}
+    if fuller_path.is_file():
+        loaded = yaml.safe_load(fuller_path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            fuller = loaded
+    measurement_id = crate_dir.name
+    sample_code = root.get("sample_code")
+    sample_code = sample_code if isinstance(sample_code, str) else ""
+    technique = root.get("technique")
+    graph = _object(str(metadata_path))
+    entities = graph.get("@graph") if isinstance(graph, dict) else []
+    return {
+        "key": f"ProcessedCache--{measurement_id}",
+        "measurement_id": measurement_id,
+        "sample_code": sample_code,
+        "campaign": _campaign(sample_code, measurement_id),
+        "cache": "ProcessedCache",
+        "kind": _kind(measurement_id),
+        "beam_energy_kev": _beam_energy(fuller),
+        "acquired": _acquired(root, fuller),
+        "technique": technique if isinstance(technique, str) and technique else "xrf",
+        "crate_path": ".",
+        "designated": _designated(entities if isinstance(entities, list) else []),
+    }
+
+
+def _campaign(sample_code: str, measurement_id: str) -> str:
+    if sample_code.startswith("AAPL") or measurement_id.startswith("aapl-"):
+        return "aapl"
+    if "Germ" in sample_code or measurement_id.startswith("radish-germ"):
+        return "radish-germ"
+    return "radish"
+
+
+def _kind(measurement_id: str) -> str:
+    if measurement_id.startswith("aapl-"):
+        return "mca_fit"
+    if "sulfur-edge" in measurement_id:
+        return "sulfur_edge"
+    return "roi_map"
+
+
+def _beam_energy(record: dict[str, Any]) -> str:
+    direct = record.get("beam_energy_keV")
+    if direct not in (None, ""):
+        return _number_string(direct)
+    for run in record.get("experiment_runs") or []:
+        if not isinstance(run, dict):
+            continue
+        energy = run.get("beam_energy")
+        if isinstance(energy, dict) and energy.get("has_numeric_value") not in (None, ""):
+            return _number_string(energy["has_numeric_value"])
+    image = record.get("xrf_image") or {}
+    energy = image.get("beam_energy") if isinstance(image, dict) else None
+    if isinstance(energy, dict) and energy.get("has_numeric_value") not in (None, ""):
+        return _number_string(energy["has_numeric_value"])
+    return ""
+
+
+def _acquired(root: dict[str, Any], record: dict[str, Any]) -> str:
+    created = root.get("dateCreated")
+    if isinstance(created, str) and created:
+        return created[:10]
+    for run in record.get("experiment_runs") or []:
+        if isinstance(run, dict) and run.get("experiment_date"):
+            return str(run["experiment_date"])[:10]
+    return ""
+
+
+def _designated(graph: list[Any]) -> str:
+    for entity in graph:
+        if isinstance(entity, dict) and entity.get("isDesignated") is True:
+            return str(entity.get("@id") or "")
+    return ""
+
+
+def _number_string(value: Any) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, bool) or value is None:
+        return ""
+    if isinstance(value, float):
+        if value.is_integer():
+            return str(int(value))
+        return format(value, "g")
+    return str(value)
 
 
 def _object(input_path: str) -> dict[str, Any] | None:

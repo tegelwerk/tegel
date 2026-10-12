@@ -1,0 +1,21 @@
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    UV_HTTP_TIMEOUT=300
+RUN pip install --no-cache-dir uv hatchling
+
+WORKDIR /src
+COPY tegel-core /src/tegel-core
+COPY tegel-base/packages/dataserver /src/tegel-base/packages/dataserver
+COPY tegel-base/packages/actions /src/tegel-base/packages/actions
+COPY example_processed_xfm_data /src/example_processed_xfm_data
+
+WORKDIR /src/example_processed_xfm_data
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --system --no-build-isolation --no-sources \
+    /src/tegel-core \
+    /src/tegel-base/packages/dataserver \
+    /src/tegel-base/packages/actions \
+    /src/example_processed_xfm_data
+
+CMD ["python", "-m", "tegel.dataserver"]

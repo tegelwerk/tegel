@@ -7,3 +7,5 @@ __pycache__/
 dist/
 build/
 *.db
+deploy/edge.env
+deploy/tls/
