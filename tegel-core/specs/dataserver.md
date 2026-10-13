@@ -219,7 +219,7 @@ If an implementation serves a SQLite catalog that another process writes, reopen
 
 The reference provider is Keycloak bearer tokens. Configuration is the issuer URL, audience, and client id, all from the environment or a local config file. This specification does not set a default host, realm name, or secret. Anonymous access is off in the reference server.
 
-A site replaces the provider by registering a different `tegel.auth` entry point and reporting that name in `Capabilities.auth`.
+A site replaces the provider by registering a different `tegel.auth` entry point and selecting that name. The server gives that provider to Tiled through one adapter. Keycloak is not left configured beside it. `Capabilities.auth` is the selected provider's name.
 
 The client sends `Authorization: Bearer <token>`. It can be given a token directly, or a token URL plus client id and client secret so it can perform an OAuth2 client-credentials grant. Those values come from the caller. The client has no built-in secret.
 

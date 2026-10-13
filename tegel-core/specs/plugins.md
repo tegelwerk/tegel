@@ -66,7 +66,7 @@ A reader or previewer implements `validate(resource) -> bool` and either `descri
 
 A storage plugin opens bytes for a URI the catalog already stored. It does not define a copy policy.
 
-An auth plugin implements `authenticate(authorization) -> Principal`. The reference registration is Keycloak. An incarnation or a site deployment can register a different provider.
+An auth plugin implements `authenticate(authorization) -> Principal`. The reference registration is Keycloak. A site deployment can register a different provider. The server passes that one provider to Tiled through an adapter and does not also register Keycloak.
 
 An index plugin implements read methods `get(resource_id)` and `keys()`. Writes belong to the ETL application.
 
@@ -90,5 +90,7 @@ An index plugin implements read methods `get(resource_id)` and `keys()`. Writes 
 - `tegel-base/tests/integration/test_read_api.py` starts the reference server and runs the conformance kit: search, get, open data. It does not write through the HTTP API.
 
 Copy those three entry points, point the profile at your schema, and keep modality vocabulary in the incarnation package. The reference process reads the installed entry points and the profile path you configure. It does not import the incarnation by name.
+
+An agent that fills in a new incarnation follows [prompts/dataserver.md](prompts/dataserver.md). That procedure lists the writable files, the stop rules, and the checks that must pass.
 
 Modality terms belong in the incarnation package. They do not belong in `tegel-core` or `tegel-base`.

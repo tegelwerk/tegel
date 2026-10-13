@@ -54,4 +54,5 @@ class ServerConfig(BaseModel):
             session_secret=required("TEGEL_SESSION_SECRET"),
             host=os.environ.get("TEGEL_HOST", "").strip() or "127.0.0.1",
             port=int(port) if port else 8000,
+            auth_name=os.environ.get("TEGEL_AUTH", "").strip() or "keycloak",
         )

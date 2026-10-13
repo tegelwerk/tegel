@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from tegel.dataserver.auth.adapter import install_bearer_check, reset_provider, use_provider
 from tegel.dataserver.catalog import open_catalog
 from tegel.dataserver.config import ServerConfig
 from tegel.dataserver.registry import (
@@ -36,29 +37,28 @@ def create_app(config: ServerConfig) -> FastAPI:
     from tiled.config import Authentication, AuthenticationProviderSpec
     from tiled.server.app import build_app
 
-    issuer = config.issuer_url.rstrip("/")
-    tiled_auth = Authentication(
-        allow_anonymous_access=False,
-        secret_keys=[config.session_secret],
-        providers=[
-            AuthenticationProviderSpec(
-                provider="keycloak",
-                authenticator="tiled.authenticators:ProxiedOIDCAuthenticator",
-                args={
-                    "audience": config.audience,
-                    "client_id": config.client_id,
-                    "client_secret": config.client_secret,
-                    "well_known_uri": f"{issuer}/.well-known/openid-configuration",
-                    "device_flow_client_id": config.client_id,
-                },
-            )
-        ],
-    )
-    app = build_app(tree, authentication=tiled_auth)
+    holder = use_provider(auth)
+    try:
+        tiled_auth = Authentication(
+            allow_anonymous_access=False,
+            secret_keys=[config.session_secret],
+            providers=[
+                AuthenticationProviderSpec(
+                    provider=auth.name,
+                    authenticator="tegel.dataserver.auth.adapter:TiledAuthAdapter",
+                )
+            ],
+        )
+        app = build_app(tree, authentication=tiled_auth)
+    finally:
+        reset_provider(holder)
+    install_bearer_check(app, auth)
+    app.state.provider = auth.name
     app.state.tegel_config = config
     app.state.tegel_profile = profile
     app.state.tegel_registry = registry
     app.state.tegel_auth = auth
+    app.state.tegel_tiled_auth = tiled_auth.authenticators[auth.name]
     app.state.tegel_index = index
     app.state.tegel_storage = storage
     app.state.tegel_readers = readers

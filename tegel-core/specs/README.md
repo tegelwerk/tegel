@@ -32,6 +32,7 @@ Incarnations declare the `SPEC_VERSION` they were written against. A server and 
 ## Documents
 
 - [dataserver.md](dataserver.md) — data server
+- [prompts/dataserver.md](prompts/dataserver.md) — agent procedure for one data-server incarnation
 - [plugins.md](plugins.md) — entry points and what an incarnation provides
 - [actions.md](actions.md) — action server, not yet specified
 - [dash.md](dash.md) — dashboard, not yet specified
