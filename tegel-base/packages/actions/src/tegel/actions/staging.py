@@ -3,14 +3,44 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from tegel.actions.errorlog import ErrorLog
 from tegel.core.contracts.resources import resource_id_for
 from tegel.core.contracts.types import SearchProfile
-from tegel.core.plugins import PluginContractError, Registry, catalog_metadata
+from tegel.core.plugins import (
+    PluginContractError,
+    Registry,
+    catalog_metadata,
+    schema_mismatch,
+)
 from tegel.core.spec import load_spec, record_slots, schema_root_from_env
+
+LOGGER = logging.getLogger("tegel.staging")
+MODES = ("skip", "fail")
+
+
+class StagingError(Exception):
+    """One bad record: the path, the stage that failed, and why."""
+
+    def __init__(self, path: str, stage: str, error: str, message: str) -> None:
+        super().__init__(f"{path}: {stage}: {message}")
+        self.path = path
+        self.stage = stage
+        self.error = error
+        self.message = message
+
+
+@dataclass
+class StagingResult:
+    staged: int = 0
+    skipped: int = 0
+    errors: list[StagingError] = field(default_factory=list)
 
 
 def claim_paths(root: Path) -> list[str]:
@@ -37,37 +67,91 @@ def load_staging_spec() -> tuple[SearchProfile, frozenset[str]]:
     return profile, record_slots(profile, schema)
 
 
-def write_staging(paths: list[str], staging: Path) -> int:
+def write_staging(
+    paths: list[str],
+    staging: Path,
+    *,
+    on_error: str = "skip",
+    error_log: Path | None = None,
+    run_id: str | None = None,
+) -> StagingResult:
     """Claim each path and write one ``{record, tegel}`` node into a new staging catalog.
 
-    Record keys must be slots of the profile's class. The catalog id is the
-    record's ``entity.identifier`` value.
+    A bad record is logged. With ``on_error="skip"`` staging continues; with
+    ``"fail"`` the staging catalog is deleted and ``StagingError`` is raised.
+    A profile, schema, or resource-type problem always raises.
     """
+    if on_error not in MODES:
+        raise ValueError(f"on_error must be skip or fail: got {on_error!r}")
     profile, slots = load_staging_spec()
     registry = Registry()
     types = registry.resource_types()
+    problem = schema_mismatch(types, profile)
+    if problem is not None:
+        raise RuntimeError(problem)
+    log = ErrorLog(error_log, run_id=run_id or uuid.uuid4().hex, mode=on_error)
     tree = _open(staging)
-    count = 0
+    result = StagingResult()
+    seen: set[str] = set()
+
+    def bad(
+        stage: str,
+        raw: str,
+        exc: Exception,
+        plugin_id: str | None,
+        resource_id: str | None = None,
+    ) -> None:
+        line = log.record(
+            stage=stage, path=raw, exc=exc, plugin_id=plugin_id, resource_id=resource_id
+        )
+        error = StagingError(raw, stage, str(line["error"]), str(line["message"]))
+        result.skipped += 1
+        result.errors.append(error)
+        if on_error == "fail":
+            _discard(tree, staging)
+            raise error from exc
+
     for raw in paths:
         try:
             plugin = registry.extractor_for(raw)
         except PluginContractError:
-            print(f"skipped {raw}", flush=True)
+            LOGGER.info("no extractor claims %s", raw)
             continue
-        package = plugin.process(raw, {})
-        stored = catalog_metadata(
-            plugin,
-            package,
-            source_path=raw,
-            profile=profile,
-            slots=slots,
-            resource_types=types,
-        )
-        key = resource_id_for(package.record, profile)
-        _write_node(tree, key=key, metadata=stored)
-        count += 1
-        print(f"staged {key}", flush=True)
-    return count
+        try:
+            package = plugin.process(raw, {})
+        except Exception as exc:
+            bad("process", raw, exc, plugin.plugin_id)
+            continue
+        try:
+            stored = catalog_metadata(
+                plugin,
+                package,
+                source_path=raw,
+                profile=profile,
+                slots=slots,
+                resource_types=types,
+            )
+        except (PluginContractError, ValueError) as exc:
+            bad("check", raw, exc, plugin.plugin_id)
+            continue
+        try:
+            key = resource_id_for(package.record, profile)
+        except ValueError as exc:
+            bad("id", raw, exc, plugin.plugin_id)
+            continue
+        if key in seen:
+            duplicate = ValueError(f"resource id {key} is already staged in this batch")
+            bad("duplicate", raw, duplicate, plugin.plugin_id, key)
+            continue
+        try:
+            _write_node(tree, key=key, metadata=stored)
+        except Exception as exc:
+            bad("write", raw, exc, plugin.plugin_id, key)
+            continue
+        seen.add(key)
+        result.staged += 1
+        LOGGER.info("staged %s", key)
+    return result
 
 
 def _open(path: Path) -> Any:
@@ -82,6 +166,14 @@ def _open(path: Path) -> Any:
     if not hasattr(tree.context, "streaming_cache"):
         tree.context.streaming_cache = None
     return tree
+
+
+def _discard(tree: Any, path: Path) -> None:
+    engine = getattr(tree.context, "engine", None)
+    if engine is not None:
+        asyncio.run(engine.dispose())
+    for suffix in ("", "-wal", "-shm"):
+        Path(f"{path}{suffix}").unlink(missing_ok=True)
 
 
 def _write_node(tree: Any, *, key: str, metadata: dict[str, Any]) -> None:

@@ -75,8 +75,8 @@ class CatalogEnvelope(BaseModel):
     resource_type_version: str = Field(min_length=1)
     payload_uri: str | None = None
     relations: list[Relation] = Field(default_factory=list)
-    schema_id: str
-    schema_version: str
+    schema_id: str = Field(min_length=1)
+    schema_version: str = Field(min_length=1)
     class_name: str = Field(alias="class")
 
 

@@ -32,7 +32,7 @@
     "description": "What a server implements, returned by ``GET /capabilities``.",
     "properties": {
       "spec_version": {
-        "default": "0.3.0",
+        "default": "0.3.1",
         "title": "Spec Version",
         "type": "string"
       },
@@ -231,10 +231,12 @@
         "type": "array"
       },
       "schema_id": {
+        "minLength": 1,
         "title": "Schema Id",
         "type": "string"
       },
       "schema_version": {
+        "minLength": 1,
         "title": "Schema Version",
         "type": "string"
       },

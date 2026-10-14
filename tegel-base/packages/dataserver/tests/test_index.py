@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
+from tegel.core.version import SPEC_VERSION
 from tegel.dataserver.app import create_app
 from tegel.dataserver.catalog import insert_record
 from tegel.dataserver.config import ServerConfig
@@ -60,7 +61,7 @@ def test_capabilities_reports_schema(tmp_path: Path) -> None:
             body = client.get(
                 "/capabilities", headers={"Authorization": f"Bearer {issued.token}"}
             ).json()
-    assert body["spec_version"] == "0.3.0"
+    assert body["spec_version"] == SPEC_VERSION
     assert body["schema_id"] == "https://w3id.org/tegel/toy/record"
     assert body["schema_version"] == "2"
     assert body["class"] == "Record"

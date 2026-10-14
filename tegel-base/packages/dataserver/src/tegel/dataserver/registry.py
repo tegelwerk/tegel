@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from tegel.core.contracts.types import SearchProfile
 from tegel.core.plugins import PluginContractError, Registry, first_true
+from tegel.core.plugins import schema_mismatch as core_schema_mismatch
 from tegel.dataserver.auth.keycloak import KeycloakAuth
 from tegel.dataserver.base import AuthProvider, Reader, Storage
 from tegel.dataserver.config import ServerConfig
@@ -17,17 +18,7 @@ def load_registry() -> Registry:
 
 def schema_mismatch(registry: Registry, profile: SearchProfile) -> str | None:
     """Return why the installed resource types do not serve the profile's schema."""
-    types = registry.resource_types()
-    if not types:
-        return "no tegel.resource_types entry point is installed"
-    for name in sorted(types):
-        found = types[name].metadata_schema
-        if found != profile.schema_id:
-            return (
-                f"resource type {name} uses schema {found}; "
-                f"the profile names {profile.schema_id}"
-            )
-    return None
+    return core_schema_mismatch(registry.resource_types(), profile)
 
 
 def readers_in_order(registry: Registry) -> list[Reader]:

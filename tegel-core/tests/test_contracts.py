@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from tegel.core.contracts.capabilities import Capabilities
 from tegel.core.contracts.resources import (
+    CatalogEnvelope,
     build_search_crate,
     hit_from_metadata,
     metadata_matches,
@@ -204,6 +205,14 @@ def test_split_rejects_flat_row() -> None:
     record, envelope = split_catalog_metadata({"record": RECORD, "tegel": ENVELOPE})
     assert record == RECORD
     assert envelope.class_name == "Sample"
+
+
+def test_envelope_rejects_empty_schema_fields() -> None:
+    with pytest.raises(ValidationError):
+        CatalogEnvelope.model_validate({**ENVELOPE, "schema_id": ""})
+    with pytest.raises(ValidationError):
+        CatalogEnvelope.model_validate({**ENVELOPE, "schema_version": ""})
+    assert CatalogEnvelope.model_validate(ENVELOPE).schema_id == ENVELOPE["schema_id"]
 
 
 def test_resource_from_catalog_projects_envelope() -> None:

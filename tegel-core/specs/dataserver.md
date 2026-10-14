@@ -296,7 +296,7 @@ A previewer implements `validate(resource) -> bool` and `preview(resource) -> Da
 
 ## Index
 
-The index is the catalog the server reads. `tegel.index` provides `get(resource_id)` and `keys()`. The reference index, `tiled`, reads node keys and metadata from the sqlite catalog that the ETL application committed. The data server's index interface is read-only.
+The index is the catalog the server reads. `tegel.index` provides `get(resource_id)` and `keys()`. The reference index, `tiled`, reads node keys and metadata from the sqlite catalog that the ETL application committed. The data server's index interface is read-only. A `TiledCatalogIndex` built with no profile, for example by the `tegel.index` entry point constructed with no arguments, serves resources without `name`, `identifier`, and `date_created`; the reference server always passes the profile.
 
 Underlying files are not modified by a read. Whether ETL copied them earlier is outside this server.
 

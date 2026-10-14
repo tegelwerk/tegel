@@ -159,6 +159,7 @@ services:
       TEGEL_OIDC_ISSUER: ${PUBLIC_ORIGIN}${PATH_AUTH}/realms/tegel
       TEGEL_OIDC_CLIENT_ID: tegel
       TEGEL_REFRESH_URL: http://dataserver:${PORT_DATA}/refresh-catalog
+      TEGEL_ON_ERROR: ${TEGEL_ON_ERROR:-skip}
       PREFECT_API_URL: http://prefect:${PORT_PREFECT}/api
     volumes:
       - ${TEGEL_OUTPUT}:/output
@@ -181,6 +182,7 @@ services:
     networks: [edge]
     environment:
       TEGEL_RECORDS: /records
+      TEGEL_ON_ERROR: ${TEGEL_ON_ERROR:-skip}
       PREFECT_API_URL: http://prefect:${PORT_PREFECT}/api
     volumes:
       - ${TEGEL_RECORDS}:/records:ro

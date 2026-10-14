@@ -27,7 +27,8 @@ cp edge.env.example edge.env
 - `TEGEL_PROFILE` is the incarnation's profile YAML. Its directory is mounted read-only at `/spec`.
 - `TEGEL_SCHEMA_ROOT` is a checkout of the schema's own repository. The profile's `schema_path` is relative to it. It is mounted read-only at `/schemas` in the data server and the ETL worker.
 - `TEGEL_RECORDS` is the directory the ingest flow walks, mounted read-only at `/records`.
-- `TEGEL_OUTPUT` holds the production catalog, staging catalogs, and the credentials file. Keep it outside the git checkout.
+- `TEGEL_OUTPUT` holds the production catalog, staging catalogs, the ingest error log, and the credentials file. Keep it outside the git checkout.
+- `TEGEL_ON_ERROR` is `skip` (log a bad record and continue) or `fail` (stop the run at the first bad record).
 
 The data server, the pipeline workers, and the one-shot setup services use the image `tegel-dataserver:local`, built from `xfm_ssrl_tegel/Containerfile` in the directory that contains this repository.
 
@@ -50,3 +51,11 @@ The ingest flow stages records, the catalog updater merges them into the product
 ```bash
 podman compose exec etl python -m tegel.actions.ingest directories /records
 ```
+
+Records that staging could not ingest are listed in `$TEGEL_OUTPUT/ingest-errors.jsonl` on the host. Show the latest run's:
+
+```bash
+podman compose exec etl python -m tegel.actions.errors --last
+```
+
+The file only grows. Rotating it is the operator's job.

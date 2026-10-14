@@ -254,6 +254,23 @@ def catalog_metadata(
     }
 
 
+def schema_mismatch(
+    resource_types: Mapping[str, ResourceType],
+    profile: SearchProfile,
+) -> str | None:
+    """Return why the resource types do not serve the profile's schema, or ``None``."""
+    if not resource_types:
+        return "no tegel.resource_types entry point is installed"
+    for name in sorted(resource_types):
+        found = resource_types[name].metadata_schema
+        if found != profile.schema_id:
+            return (
+                f"resource type {name} uses schema {found}; "
+                f"the profile names {profile.schema_id}"
+            )
+    return None
+
+
 def _require_call(method: object, arguments: tuple[object, ...], message: str) -> None:
     if not callable(method):
         raise PluginContractError(message)
