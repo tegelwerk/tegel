@@ -32,7 +32,7 @@
     "description": "What a server implements, returned by ``GET /capabilities``.",
     "properties": {
       "spec_version": {
-        "default": "0.3.1",
+        "default": "0.3.2",
         "title": "Spec Version",
         "type": "string"
       },

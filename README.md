@@ -4,7 +4,7 @@ Tegel loads a LinkML schema it is given, maps records that an upstream producer 
 
 This repository holds the specification, the shared contracts, and the reference implementation. A facility extends it with an incarnation: a separate installable package that registers resource types, extractors, and readers, and supplies a search profile that names an external LinkML schema and class. Modality vocabulary stays in the incarnation.
 
-Each catalog row stores the domain record, keyed by slots of the schema's class, apart from Tegel's own bookkeeping (plugin, source, resource type, payload location, relations, schema id and version). The schema needs no Tegel fields. The specification version is `0.3.1`.
+Each catalog row stores the domain record, keyed by slots of the schema's class, apart from Tegel's own bookkeeping (plugin, source, resource type, payload location, relations, schema id and version). The schema needs no Tegel fields. The specification version is `0.3.2`.
 
 ## Layout
 

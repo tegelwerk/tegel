@@ -276,6 +276,32 @@ def test_run_id_shared_across_batches(tmp_path: Path, monkeypatch) -> None:
     assert len({line["run_id"] for line in lines}) == 1
 
 
+def test_all_skipped_message(tmp_path: Path, monkeypatch) -> None:
+    _flow_env(tmp_path, monkeypatch)
+    for name in ("a", "b", "c"):
+        _record(tmp_path, {"uuid": f"rec-{name}", "exposure_count": "7"}, name)
+    log = tmp_path / "output" / "ingest-errors.jsonl"
+    records = tmp_path / "records"
+    with pytest.raises(RuntimeError) as caught:
+        ingest.ingest_directories.fn(records=str(records))
+    assert str(caught.value) == f"no record staged from {records}: 3 skipped; errors in {log}"
+    assert list((tmp_path / "output" / "staging").iterdir()) == []
+
+
+def test_unexpected_error_discards_staging(tmp_path: Path, profile, monkeypatch) -> None:
+    from tegel.actions import staging as staging_module
+
+    def broken(record, profile):
+        raise TypeError("not a stage error")
+
+    monkeypatch.setattr(staging_module, "resource_id_for", broken)
+    raw = _record(tmp_path, SIDECAR)
+    staging = tmp_path / "staging" / "batch.db"
+    with pytest.raises(TypeError, match="not a stage error"):
+        write_staging([str(raw)], staging)
+    assert sorted(path.name for path in staging.parent.iterdir()) == []
+
+
 def test_invalid_on_error_value(tmp_path: Path, monkeypatch) -> None:
     _flow_env(tmp_path, monkeypatch)
     monkeypatch.setenv("TEGEL_ON_ERROR", "maybe")

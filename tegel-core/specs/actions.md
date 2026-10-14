@@ -17,7 +17,7 @@ The flow takes `records` (default `TEGEL_RECORDS`), `batch_size` (default 100), 
 5. runs the deployment `update-catalog/catalog-updater` with that staging path and `$TEGEL_OUTPUT/catalog.db`, and waits for it to complete
 6. calls `POST /refresh-catalog`
 
-The flow fails when `records` is not a directory, when no file is claimed, or when no record is staged across the whole run. A batch that stages nothing is not merged. Batches merged before a failure stay merged. Each run prints one summary, `staged N, skipped M`, followed by `; errors in <path>` when M is above zero.
+The flow fails when `records` is not a directory, when no file is claimed (`no record in <root>`), or when no record is staged across the whole run (`no record staged from <root>: <M> skipped; errors in <log>`). A batch that stages nothing is not merged, and its staging files are removed. Batches merged before a failure stay merged. Each run prints one summary, `staged N, skipped M`, followed by `; errors in <path>` when M is above zero.
 
 `python -m tegel.actions.ingest directories [records] [--on-error skip|fail]` submits one run of the serving deployment and waits for it. It retries for up to 180 seconds while the deployment is not registered. Without `--on-error`, it passes `TEGEL_ON_ERROR` when that is set, and otherwise leaves the mode to the worker.
 
@@ -36,7 +36,7 @@ First it loads the profile at `TEGEL_PROFILE` under `TEGEL_SCHEMA_ROOT` and its 
 | `duplicate` | reject a key already staged in this batch, before anything is written |
 | `write` | write one node with structure family `bytes` and the row as its metadata |
 
-Staging never opens the production catalog. It does not copy payload files. It logs on the `tegel.staging` logger.
+Staging never opens the production catalog. It does not copy payload files. It logs on the `tegel.staging` logger. When any exception escapes the stages, `write_staging` closes the staging catalog, removes its file and the `-wal` and `-shm` files, and re-raises.
 
 ## Errors
 

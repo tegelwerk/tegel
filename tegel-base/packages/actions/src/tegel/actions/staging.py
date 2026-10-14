@@ -111,46 +111,55 @@ def write_staging(
             _discard(tree, staging)
             raise error from exc
 
-    for raw in paths:
-        try:
-            plugin = registry.extractor_for(raw)
-        except PluginContractError:
-            LOGGER.info("no extractor claims %s", raw)
-            continue
-        try:
-            package = plugin.process(raw, {})
-        except Exception as exc:
-            bad("process", raw, exc, plugin.plugin_id)
-            continue
-        try:
-            stored = catalog_metadata(
-                plugin,
-                package,
-                source_path=raw,
-                profile=profile,
-                slots=slots,
-                resource_types=types,
-            )
-        except (PluginContractError, ValueError) as exc:
-            bad("check", raw, exc, plugin.plugin_id)
-            continue
-        try:
-            key = resource_id_for(package.record, profile)
-        except ValueError as exc:
-            bad("id", raw, exc, plugin.plugin_id)
-            continue
-        if key in seen:
-            duplicate = ValueError(f"resource id {key} is already staged in this batch")
-            bad("duplicate", raw, duplicate, plugin.plugin_id, key)
-            continue
-        try:
-            _write_node(tree, key=key, metadata=stored)
-        except Exception as exc:
-            bad("write", raw, exc, plugin.plugin_id, key)
-            continue
-        seen.add(key)
-        result.staged += 1
-        LOGGER.info("staged %s", key)
+    try:
+        for raw in paths:
+            try:
+                plugin = registry.extractor_for(raw)
+            except PluginContractError:
+                LOGGER.info("no extractor claims %s", raw)
+                continue
+            try:
+                package = plugin.process(raw, {})
+            except Exception as exc:
+                bad("process", raw, exc, plugin.plugin_id)
+                continue
+            try:
+                stored = catalog_metadata(
+                    plugin,
+                    package,
+                    source_path=raw,
+                    profile=profile,
+                    slots=slots,
+                    resource_types=types,
+                )
+            except (PluginContractError, ValueError) as exc:
+                bad("check", raw, exc, plugin.plugin_id)
+                continue
+            try:
+                key = resource_id_for(package.record, profile)
+            except ValueError as exc:
+                bad("id", raw, exc, plugin.plugin_id)
+                continue
+            if key in seen:
+                duplicate = ValueError(f"resource id {key} is already staged in this batch")
+                bad("duplicate", raw, duplicate, plugin.plugin_id, key)
+                continue
+            try:
+                _write_node(tree, key=key, metadata=stored)
+            except Exception as exc:
+                bad("write", raw, exc, plugin.plugin_id, key)
+                continue
+            seen.add(key)
+            result.staged += 1
+            LOGGER.info("staged %s", key)
+    except StagingError as exc:
+        if exc not in result.errors:
+            _discard(tree, staging)
+        raise
+    except BaseException:
+        _discard(tree, staging)
+        raise
+    _close(tree)
     return result
 
 
@@ -168,12 +177,21 @@ def _open(path: Path) -> Any:
     return tree
 
 
-def _discard(tree: Any, path: Path) -> None:
+def remove_staging(path: Path) -> None:
+    """Remove a staging catalog and its sqlite ``-wal`` and ``-shm`` files."""
+    for suffix in ("", "-wal", "-shm"):
+        Path(f"{path}{suffix}").unlink(missing_ok=True)
+
+
+def _close(tree: Any) -> None:
     engine = getattr(tree.context, "engine", None)
     if engine is not None:
         asyncio.run(engine.dispose())
-    for suffix in ("", "-wal", "-shm"):
-        Path(f"{path}{suffix}").unlink(missing_ok=True)
+
+
+def _discard(tree: Any, path: Path) -> None:
+    _close(tree)
+    remove_staging(path)
 
 
 def _write_node(tree: Any, *, key: str, metadata: dict[str, Any]) -> None:

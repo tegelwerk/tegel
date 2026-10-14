@@ -15,7 +15,13 @@ from prefect.deployments import run_deployment
 
 from tegel.actions.errorlog import FILENAME as ERROR_LOG
 from tegel.actions.refresh import refresh_catalog
-from tegel.actions.staging import MODES, StagingError, claim_paths, write_staging
+from tegel.actions.staging import (
+    MODES,
+    StagingError,
+    claim_paths,
+    remove_staging,
+    write_staging,
+)
 
 UPDATER = "update-catalog/catalog-updater"
 INGEST = "ingest-directories/ingest-directories"
@@ -55,7 +61,7 @@ def ingest_directories(records: str = "", batch_size: int = 100, on_error: str =
             )
             skipped += result.skipped
             if result.staged == 0:
-                staging.unlink(missing_ok=True)
+                remove_staging(staging)
                 continue
             run = run_deployment(
                 name=UPDATER,
@@ -73,7 +79,9 @@ def ingest_directories(records: str = "", batch_size: int = 100, on_error: str =
     finally:
         print(summary(total, skipped, error_log), flush=True)
     if total == 0:
-        raise RuntimeError(f"no record in {root}")
+        raise RuntimeError(
+            f"no record staged from {root}: {skipped} skipped; errors in {error_log}"
+        )
     return total
 
 

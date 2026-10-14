@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tegel data server",
-    "version": "0.3.1",
+    "version": "0.3.2",
     "description": "Read-only catalog API. The reference search document is an RO-Crate. A server may advertise another search_document and return SearchResult JSON."
   },
   "paths": {
@@ -341,7 +341,7 @@
         "description": "What a server implements, returned by ``GET /capabilities``.",
         "properties": {
           "spec_version": {
-            "default": "0.3.1",
+            "default": "0.3.2",
             "title": "Spec Version",
             "type": "string"
           },

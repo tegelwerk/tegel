@@ -30,7 +30,7 @@ A **compatible** change is any of:
 - advertising a new `search_document` value besides `ro-crate`
 - adding an entry-point group
 
-The current version is `0.3.1`. Incarnations declare the `SPEC_VERSION` they were written against. A server and a client are compatible when their major versions match. Before `1.0.0`, the minor version may break; the reference packages in this repository move together.
+The current version is `0.3.2`. Incarnations declare the `SPEC_VERSION` they were written against. A server and a client are compatible when their major versions match. Before `1.0.0`, the minor version may break; the reference packages in this repository move together.
 
 ## Migrating from 0.2
 
