@@ -60,6 +60,16 @@ The catalog id is `options["key"]` when that is a non-empty string, otherwise me
 
 The package also supplies a LinkML schema and a search profile. `metadata_schema` on the `ResourceType` is the schema id. The profile's `search`, `properties`, and `entity` slots must be attributes of that schema's tree-root class. Adding a metadata field is a schema edit, then a profile edit if the field should be searchable or copied into the RO-Crate.
 
+`search` lists categorical fields only: codes, names, enumerations, and booleans stored as `true` or `false`. Numbers, timestamps, free text, and comma-joined lists go in `properties`. Search comparison is exact string equality with the value stored in catalog metadata, so those other fields do not match usefully there.
+
+## Upstream records
+
+An extractor claims the files an upstream producer already writes: a crate, a record JSON, or a header file. It does not walk a facility tree to rebuild what that producer knows.
+
+When an upstream producer exists, the incarnation names it. The positive fixture is a file that producer wrote from real data, committed unchanged except for redaction the human approves.
+
+The base ingest flow (`tegel.actions.ingest`) already walks `TEGEL_RECORDS` recursively and asks extractors. An incarnation's ETL action, in its `actions/` package, calls the upstream producer's library to write those files, then hands the output directory to that flow. It does not duplicate the producer's logic.
+
 ## Readers, previewers, storage, auth, index
 
 A reader or previewer implements `validate(resource) -> bool` and either `describe(resource)` or `preview(resource)`, returning a `DataDescriptor`. The same first-true rule applies. `describe` returns chunk information for an array and does not load the array.

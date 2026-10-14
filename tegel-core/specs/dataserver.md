@@ -4,7 +4,7 @@ The data server reads a catalog that an ETL pipeline has already written and ser
 
 The behavior below is taken from the Personalized Data Server Platform in ProductionLambda, then narrowed by these decisions:
 
-- The HTTP API is read-only.
+- The HTTP API is read-only. Read-only means no route creates, changes, or deletes a catalog record or a file.
 - Filling the catalog, including whether payload bytes are copied, is a downstream ETL application. This specification does not require copying and does not forbid it.
 - The reference search document is an RO-Crate. Another specification may define a different document.
 - Resource metadata is authored as LinkML YAML. A profile YAML chooses the search fields and the fields copied into the search document.
@@ -27,7 +27,7 @@ The data server:
 
 The data server does not:
 
-- accept writes, derived resources, or client edits
+- accept writes of a catalog record or a file, derived resources, or client edits
 - walk a raw directory, choose a plugin, extract metadata, copy payloads, or merge a staging catalog
 - modify files that the catalog points at
 - embed modality vocabulary
@@ -61,8 +61,11 @@ Errors use `{"detail": "<message>"}`.
 | `GET /resources/{id}` | `Resource` JSON |
 | `GET /resources/{id}/metadata` | Catalog metadata JSON object |
 | `GET /resources/{id}/data` | `DataDescriptor` JSON |
+| `POST /refresh-catalog` | `{"refreshed": true}` |
 
 `GET /resources/{id}/data/content` returns the stored bytes when the descriptor's structure family is `bytes`. For `array`, `table`, `container`, or `sparse`, the descriptor is the data access contract. The server does not offer a single response that contains the whole array.
+
+`POST /refresh-catalog` is an operational route. It reopens the catalog after the ETL merge. It writes nothing. It requires the same authentication as every other route. It is the only non-GET route. When the catalog is not database-backed, the response is `409` with `{"detail": "Catalog is not database-backed"}`.
 
 Unknown routes are `404`. An unknown `{id}` is `404` with `{"detail": "Resource not found"}`.
 
@@ -211,7 +214,7 @@ The index is the catalog the server reads. `tegel.index` provides `get` and `key
 
 Underlying files are not modified by a read. Whether ETL copied them earlier is outside this server.
 
-If an implementation serves a SQLite catalog that another process writes, reopening pooled connections is an operational concern of that implementation. It is not a `DataClient` method.
+If an implementation serves a SQLite catalog that another process writes, reopening pooled connections is an operational concern of that implementation. The reference server does this with `POST /refresh-catalog`, which writes nothing. It is not a `DataClient` method.
 
 ## Authentication
 

@@ -13,10 +13,11 @@ from tegel.core.plugins import check_package
 from tegel.dataserver.app import create_app
 from tegel.dataserver.catalog import catalog_has_graph, insert_record
 from tegel.dataserver.config import ServerConfig
-from tegel.dataserver.testing import OIDCIssuer, assert_read_only_api
+from tegel.dataserver.testing import OIDCIssuer, assert_incarnation
 from tegel.toy.dataserver import ToyExtractor
 
-PROFILE = Path(__file__).resolve().parents[2] / "examples" / "toy" / "schema" / "profile.yaml"
+TOY = Path(__file__).resolve().parents[2] / "examples" / "toy"
+PROFILE = TOY / "schema" / "profile.yaml"
 
 
 def test_search_get_and_open_data(tmp_path: Path) -> None:
@@ -93,13 +94,16 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
             structure_family="bytes",
         )
         with TestClient(app) as http_client:
-            assert_read_only_api(
-                "http://testserver",
+            assert_incarnation(
+                TOY,
+                base_url="http://testserver",
                 token=issued.token,
                 http_client=http_client,
                 resource_id="rec-derived",
                 search_field="channel",
                 search_value="red",
+                positive_fixture=derived,
+                rejected_input=blob,
             )
             with DataClient(
                 "http://testserver",

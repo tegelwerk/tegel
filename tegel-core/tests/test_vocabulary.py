@@ -17,8 +17,13 @@ TERMS = (
 
 def _files() -> list[Path]:
     found = [ROOT / "README.md"]
+    prompts = (ROOT / "specs" / "prompts").resolve()
     for folder in ("src", "specs", "scripts"):
-        found.extend(path for path in (ROOT / folder).rglob("*") if path.suffix in {".py", ".md"})
+        found.extend(
+            path
+            for path in (ROOT / folder).rglob("*")
+            if path.suffix in {".py", ".md"} and prompts not in path.resolve().parents
+        )
     return found
 
 

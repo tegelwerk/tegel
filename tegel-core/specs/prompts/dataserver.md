@@ -6,6 +6,15 @@ The conforming skeleton is `tegel-base/examples/toy`. Read it. Copy its shape. R
 
 `tegel-core` and `tegel-base` are read-only. You depend on them. You do not edit them.
 
+## Required inputs
+
+Before you write code, the human supplies:
+
+- the name of the upstream producer, if one exists
+- one real positive fixture that producer wrote, or a directory skeleton captured from real data
+
+If neither a real fixture nor a real skeleton is present, stop and ask. Do not synthesize a layout, a file format, or field values.
+
 ## Read first
 
 Read these, in this order, before you write code.
@@ -17,7 +26,7 @@ Read these, in this order, before you write code.
 5. `tegel-base/examples/toy/schema/profile.yaml`
 6. `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py`
 7. `tegel-base/examples/toy/tests/test_extractor.py`
-8. `tegel-base/tests/integration/test_read_api.py`, for the `create_app`, `insert_record`, and `assert_read_only_api` sequence only.
+8. `tegel-base/tests/integration/test_read_api.py`, for the `create_app`, `insert_record`, and `assert_incarnation` sequence only.
 
 ## Writable files
 
@@ -33,7 +42,13 @@ Write only these files in the incarnation package. Create no other files.
 
 `<modality>` is a short package name for this incarnation. Do not add `src/tegel/__init__.py`. `tegel` stays a namespace package.
 
-Runtime dependencies are `tegel-core` only. The dev group adds `tegel-dataserver`, `pytest`, and `httpx` so the checks below can run. Use the hatch layout from the toy `pyproject.toml`: wheel sources map `src` to the package root, and the wheel includes only `src/tegel`.
+Runtime dependencies are `tegel-core` plus, at most, the format library the reader needs. A reader may depend on one format library (for example `h5py`) when `describe` must read header metadata. `describe` still does not read chunk bytes. The dev group adds `tegel-dataserver`, `pytest`, and `httpx` so the checks below can run. Use the hatch layout from the toy `pyproject.toml`: wheel sources map `src` to the package root, and the wheel includes only `src/tegel`.
+
+## Actions package
+
+An incarnation repository is a uv workspace like `xfm_ssrl_tegel`: `dataserver/`, `actions/`, `dash/`. This procedure covers `dataserver/` only. That package walks no tree and runs no ETL.
+
+ETL belongs in the `actions/` package. That package calls the upstream producer's library (for MX, `lambda-rocrate` from `etldatadash`) and then the base `tegel.actions.staging` / `tegel.actions.ingest` code. An actions package re-implements no discovery the upstream library already provides.
 
 ## Blanks
 
@@ -64,7 +79,7 @@ Do not register `tegel.auth`, `tegel.storage`, `tegel.index`, or `tegel.previewe
 
 Add the modality fields the task requires. A metadata field that is not a schema attribute is a mistake. Add the attribute, then add it to the profile only when it is searchable or copied into the RO-Crate.
 
-**Profile.** `schema` is the schema filename beside this file. `search`, `properties`, and `entity.name`, `entity.identifier`, and `entity.dateCreated` are attributes of the tree-root class. `load_spec` rejects any other slot.
+**Profile.** `schema` is the schema filename beside this file. `search`, `properties`, and `entity.name`, `entity.identifier`, and `entity.dateCreated` are attributes of the tree-root class. `load_spec` rejects any other slot. `search` lists categorical fields only: codes, names, enumerations, and booleans stored as `true` or `false`. Numbers, timestamps, free text, and comma-joined lists go in `properties`, because search comparison is exact string equality.
 
 **Extractor.** Subclass `tegel.core.plugins.Extractor`. The class constructs with no arguments.
 
@@ -80,7 +95,7 @@ Add the modality fields the task requires. A metadata field that is not a schema
 **Reader.** `validate(resource) -> bool` and `describe(resource) -> DataDescriptor`.
 
 - `validate` is true only for `RECORD.name`.
-- For an array, `describe` returns `shape`, `chunks`, and `data_type` from header or store metadata.
+- For an array, `describe` returns `shape`, `chunks`, and `data_type` from header or store metadata. One format library may read that header.
 - `describe` does not open chunk files and does not load the array payload.
 - A payload that is not an array is `StructureFamily.bytes` with media type `application/octet-stream`.
 
@@ -95,6 +110,8 @@ Stop, and do not edit further, when the next change would do any of the followin
 - Import this package by name from the base. The server loads installed entry points and the profile path it is configured with.
 - Make `validate` return a score. The first entry point whose `validate` returns true wins. Entry points are sorted by name. Later plugins are not called.
 - Read array chunk bytes inside `describe`.
+- Invent a facility path layout, file format, or naming convention that is not in the supplied fixture.
+- Re-implement discovery or record building that the upstream producer already does.
 
 ## Do not copy that package's launcher
 
@@ -103,20 +120,18 @@ The package [tegelwerk/xfm_ssrl_tegel](https://github.com/tegelwerk/xfm_ssrl_teg
 Do not copy the rest of that package. It misses this contract.
 
 - `schema/measurement.yaml` has no `plugin_id`, `source_name`, `resource_type`, or `resource_type_version`, while `process` still writes `plugin_id` and `source_name`. The toy schema includes the fields `process` writes. A metadata field is a schema attribute.
-- `tests/test_plugin.py` never calls `assert_read_only_api`. A missing token, an unknown search field, and `POST /resources` are unchecked.
+- `tests/test_plugin.py` never calls `assert_incarnation`. A missing token, an unknown search field, and `POST /resources` are unchecked.
 - `launch.py`, `start_all.sh`, and `Containerfile` start Keycloak and build a server image. That is outside this incarnation. Do not create those files.
 
-The `dash` and `actions` packages in that repository are out of scope.
+Do not copy the `dash` and `actions` packages in that repository. Follow the Actions package section.
 
 ## Done when
 
-All of the following succeed. Use the functions named here. Do not replace them with a private check.
+Call `assert_incarnation` from `tegel.dataserver.testing` on this `dataserver/` package. Do not replace it with a private check. A passing `pytest` run of hand-written assertions is not a substitute.
 
-1. `load_spec(profile_path)` from `tegel.dataserver.spec` returns the profile. A slot that is not a schema attribute raises `ValueError`.
-2. `check_package` from `tegel.core.plugins` accepts `process` on the positive fixture. `validate` on the rejected input is `False`.
-3. `describe` on that package's metadata returns a `DataDescriptor`. When the family is `array`, `shape` is non-empty, and the fixture's chunk files are not opened.
-4. The test builds an app with `create_app` and this profile, writes one row with `insert_record`, and calls `assert_read_only_api` from `tegel.dataserver.testing`. That check requires a bearer token (`401` without one), rejects an unknown search field (`400`), reads the resource, and rejects `POST /resources` (`405`). Follow the sequence in `tegel-base/tests/integration/test_read_api.py`.
-5. From the incarnation package:
+`assert_incarnation` checks the package layout, runtime and dev dependencies, entry points, the profile, search-field ranges, the extractor on the positive fixture and the rejected input, `describe`, and the read API. Build the app with `create_app`, write one row with `insert_record`, and pass that server to `assert_incarnation`. Follow the sequence in `tegel-base/tests/integration/test_read_api.py`.
+
+From the incarnation package:
 
 ```bash
 uv run pytest
