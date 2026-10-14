@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tegel-dash"
 version = "0.1.0"
-description = "Placeholder. Will be implemented after the data server."
+description = "Empty dashboard package. It contains no dashboard code."
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]

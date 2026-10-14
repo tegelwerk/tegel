@@ -29,18 +29,14 @@ A **compatible** change is any of:
 - advertising a new `search_document` value besides `ro-crate`
 - adding an entry-point group
 
-Incarnations declare the `SPEC_VERSION` they were written against. A server and a client are compatible when their major versions match. Before `1.0.0`, the minor version may break; the reference packages in this repository move together.
-
-### Changes
-
-- `0.2.0` removes `SearchProfile.schema`. A profile now requires `schema_id`, `schema_version`, `schema_path`, and `class`. The schema is loaded from `TEGEL_SCHEMA_ROOT`, never from the incarnation package. Record metadata keys must be slots of that class.
+The current version is `0.2.0`. Incarnations declare the `SPEC_VERSION` they were written against. A server and a client are compatible when their major versions match. Before `1.0.0`, the minor version may break; the reference packages in this repository move together.
 
 ## Documents
 
-- [dataserver.md](dataserver.md) — data server
-- [prompts/dataserver.md](prompts/dataserver.md) — agent procedure for one data-server incarnation
+- [dataserver.md](dataserver.md) — data server: read API, resource model, profiles, configuration
 - [plugins.md](plugins.md) — entry points and what an incarnation provides
-- [actions.md](actions.md) — action server, not yet specified
-- [dash.md](dash.md) — dashboard, not yet specified
-- [interfaces.md](interfaces.md) — YAML procedures, not yet specified
-- [generated/](generated/) — JSON Schema and OpenAPI exported from the wire models
+- [actions.md](actions.md) — reference catalog pipeline: staging, merge, refresh
+- [prompts/dataserver.md](prompts/dataserver.md) — agent procedure for one data-server incarnation
+- [dash.md](dash.md) — dashboard
+- [interfaces.md](interfaces.md) — YAML procedures
+- [generated/](generated/) — JSON Schema and OpenAPI exported from the wire models by `scripts/export_schemas.py`

@@ -45,7 +45,7 @@ Runtime dependencies are `tegel-core` plus, at most, the format library the read
 
 ## Actions package
 
-An incarnation repository is a uv workspace like `xfm_ssrl_tegel`: `dataserver/`, `actions/`, `dash/`. This procedure covers `dataserver/` only. That package walks no tree and runs no ETL.
+An incarnation repository is a uv workspace with members `dataserver/`, `actions/`, and `dash/`. This procedure covers `dataserver/` only. That package walks no tree and runs no ETL.
 
 ETL belongs in the `actions/` package. That package calls the upstream producer's library (for MX, `lambda-rocrate` from `etldatadash`) and then the base `tegel.actions.staging` / `tegel.actions.ingest` code. An actions package re-implements no discovery the upstream library already provides.
 
@@ -105,18 +105,9 @@ Stop, and do not edit further, when the next change would do any of the followin
 - Invent a facility path layout, file format, or naming convention that is not in the supplied fixture.
 - Re-implement discovery or record building that the upstream producer already does.
 - Write, copy, or edit a LinkML schema, or need a field the supplied class lacks. Report the field for the schema owner.
+- Create a launcher, a start script, or a `Containerfile`, or start Keycloak. The base deployment in `tegel-base/deploy` does that.
 
-## Do not copy that package's launcher
-
-The package [tegelwerk/xfm_ssrl_tegel](https://github.com/tegelwerk/xfm_ssrl_tegel) `dataserver/` is a partial illustration. You may follow only these three ideas from it: three entry points with one name, a profile whose slots exist on the schema, and a reader that uses store metadata (`zarr.json`) instead of chunk files.
-
-Do not copy the rest of that package. It misses this contract.
-
-- `schema/measurement.yaml` is a schema inside the incarnation. An incarnation names a schema; it never contains one.
-- `tests/test_plugin.py` never calls `assert_incarnation`. A missing token, an unknown search field, and `POST /resources` are unchecked.
-- `launch.py`, `start_all.sh`, and `Containerfile` start Keycloak and build a server image. That is outside this incarnation. Do not create those files.
-
-Do not copy the `dash` and `actions` packages in that repository. Follow the Actions package section.
+Copy the shape of the toy package only. Do not copy another incarnation's files. A reader may use store metadata (for example `zarr.json`) in place of chunk files.
 
 ## Done when
 

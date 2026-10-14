@@ -1,20 +1,24 @@
 # tegel-core
 
-Specification, wire contracts, and read-only data client for Tegel.
+Specification, wire contracts, plugin checks, and read-only data client for Tegel. Other implementations can build against this package without `tegel-base`.
 
-Tegel is a set of base packages that a facility extends into a modality-specific incarnation. This package holds the contracts those packages share. It does not serve data, run ETL, or know about any scientific modality.
+It does not serve data, run ETL, depend on Tiled, or know about any scientific modality. Its runtime dependencies are `pydantic`, `httpx`, and `pyyaml`.
 
-The copyright line in `LICENSE` is a BSD-3-Clause placeholder pending confirmation with LBNL.
+BSD-3-Clause. Copyright is held by The Tegelwerk Contributors; see `LICENSE`.
 
 ## Layout
 
-- `specs/` — the specification. `specs/dataserver.md` is the data server contract.
-- `src/tegel/core/` — pydantic models, plugin registry, and `DataClient`.
+- `specs/` — the specification. Start at [`specs/README.md`](specs/README.md).
+- `src/tegel/core/contracts/` — pydantic wire models (`Capabilities`, `Resource`, `ResourcePage`, `DataDescriptor`, `SearchResult`, `SearchProfile`, `ResourceType`, `Provenance`) and the RO-Crate search document builder and parser.
+- `src/tegel/core/plugins.py` — the entry-point groups, `Registry`, the `Extractor` base class, the reader, previewer, storage, auth, and index protocols, `first_true`, and `check_package`.
+- `src/tegel/core/spec.py` — `load_spec(profile_path, schema_root)`, which loads a search profile and the LinkML schema it names under `TEGEL_SCHEMA_ROOT`, and `record_slots`, which returns the slots of the profile's class.
+- `src/tegel/core/client/` — `DataClient`: capabilities, search, browse, get, metadata, data descriptors, and bytes. Bearer token, or OAuth2 client credentials. No write method.
+- `src/tegel/core/version.py` — `SPEC_VERSION`.
 - `scripts/export_schemas.py` — writes JSON Schema and OpenAPI for the wire models into `specs/generated/`.
 
-Project metadata is authored as LinkML YAML in the schema's own repository. An incarnation's search profile names that schema and one class. The generated JSON Schema describes these wire models. It is not a second way to author a resource type.
+LinkML schemas live in their own repositories. An incarnation's search profile names one schema and one class. The generated JSON Schema describes the wire models. It is not a way to author a resource type.
 
-## Install
+## Develop
 
 ```bash
 uv sync --group dev

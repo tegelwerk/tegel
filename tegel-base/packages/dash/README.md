@@ -1,3 +1,3 @@
 # tegel-dash
 
-Placeholder. Will be implemented after the data server.
+Empty package. `tegel.dash` exposes only `__version__`. It contains no dashboard code.
