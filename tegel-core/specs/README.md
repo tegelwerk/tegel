@@ -1,10 +1,12 @@
 # Tegel specification
 
+Tegel does three things. It loads a LinkML schema it is given, maps records that an upstream producer wrote into a Tiled catalog, and serves them read-only. It does not author schemas, and it does not walk, parse or reorganize source data. Those belong to the schema's repository and to the producer.
+
 Tegel separates a shared base from a modality-specific incarnation.
 
 The **base** is this specification, the wire contracts in `tegel-core`, and the reference servers in `tegel-base`. The reference servers are readable and tested. They are not a hardened production deployment. Authentication, storage, and the catalog index are interfaces. The reference data server uses Keycloak as its default authentication provider. A site can replace that provider. The reference data server reads an incarnation's spec and launches Tiled, modified to this specification, on a Tiled release that includes the entity/link graph.
 
-An **incarnation** is a separate package that registers resource types, ETL plugins, readers, and optional previewers. It supplies a LinkML schema and a search profile. It does not modify the base. Modality vocabulary lives only in the incarnation.
+An **incarnation** is a separate package that registers resource types, ETL plugins, readers, and optional previewers. It supplies a search profile that names a LinkML schema and one class in it. It does not contain that schema. It does not modify the base. Modality vocabulary lives only in the incarnation.
 
 `tegel-core` is the piece other institutes can implement against. `tegel-base` is one implementation. A facility may replace the reference server and still pass the same contracts.
 
@@ -28,6 +30,10 @@ A **compatible** change is any of:
 - adding an entry-point group
 
 Incarnations declare the `SPEC_VERSION` they were written against. A server and a client are compatible when their major versions match. Before `1.0.0`, the minor version may break; the reference packages in this repository move together.
+
+### Changes
+
+- `0.2.0` removes `SearchProfile.schema`. A profile now requires `schema_id`, `schema_version`, `schema_path`, and `class`. The schema is loaded from `TEGEL_SCHEMA_ROOT`, never from the incarnation package. Record metadata keys must be slots of that class.
 
 ## Documents
 

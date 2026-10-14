@@ -1,6 +1,6 @@
 # tegel-dataserver
 
-Reference data server. It reads an incarnation's entry points, LinkML schema, and search profile, then launches Tiled with anonymous access off and the read API from `tegel-core` mounted on it.
+Reference data server. It reads an incarnation's entry points and search profile, and the LinkML schema that profile names under `TEGEL_SCHEMA_ROOT`, then launches Tiled with anonymous access off and the read API from `tegel-core` mounted on it.
 
 The Tiled release must include the entity/link graph (`tiled.graph`). The dependency floor is `tiled[server]>=0.2.15`. A newer release stays in range only while that graph is still installed.
 

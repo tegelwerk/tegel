@@ -27,7 +27,6 @@ from tegel.core.plugins import ProcessedDataPackage
 SCHEMA = {
     "classes": {
         "Sample": {
-            "tree_root": True,
             "attributes": {
                 "uuid": {},
                 "sample_name": {},
@@ -42,7 +41,10 @@ PROFILE = SearchProfile.model_validate(
     {
         "id": "https://example.com/profile",
         "name": "Sample search",
-        "schema": "sample.yaml",
+        "schema_id": "https://example.com/sample",
+        "schema_version": "1",
+        "schema_path": "sample.yaml",
+        "class": "Sample",
         "search": ["sample_name", "kind"],
         "properties": ["sample_name", "kind"],
         "entity": {
@@ -54,23 +56,45 @@ PROFILE = SearchProfile.model_validate(
 )
 
 
-def test_linkml_tree_root_attributes() -> None:
-    assert linkml_attribute_names(SCHEMA) == ["uuid", "sample_name", "kind", "recorded"]
+def test_linkml_named_class_attributes() -> None:
+    assert linkml_attribute_names(SCHEMA, "Sample") == ["uuid", "sample_name", "kind", "recorded"]
 
 
-def test_linkml_single_class_without_tree_root() -> None:
-    schema = {"classes": {"Only": {"attributes": {"uuid": {}}}}}
-    assert linkml_attribute_names(schema) == ["uuid"]
+def test_linkml_slots_and_is_a_ancestors() -> None:
+    schema = {
+        "imports": ["linkml:types"],
+        "slots": {"uuid": {"range": "string"}, "energy": {"range": "float"}},
+        "classes": {
+            "Base": {"slots": ["uuid"], "attributes": {"plugin_id": {}}},
+            "Series": {"is_a": "Base", "slots": ["energy"]},
+            "Pin": {"is_a": "Series", "attributes": {"pin_id": {}}},
+            "Other": {"attributes": {"unrelated": {}}},
+        },
+    }
+    assert linkml_attribute_names(schema, "Pin") == [
+        "uuid",
+        "plugin_id",
+        "energy",
+        "pin_id",
+    ]
 
 
-def test_linkml_requires_one_root() -> None:
-    schema = {"classes": {"A": {"attributes": {"x": {}}}, "B": {"attributes": {"y": {}}}}}
-    with pytest.raises(ValueError, match="tree_root"):
-        linkml_attribute_names(schema)
+def test_linkml_rejects_a_missing_class_and_a_cycle() -> None:
+    with pytest.raises(ValueError, match="Missing"):
+        linkml_attribute_names(SCHEMA, "Missing")
+    looped = {"classes": {"A": {"is_a": "B", "slots": ["x"]}, "B": {"is_a": "A"}}}
+    with pytest.raises(ValueError, match="cycle"):
+        linkml_attribute_names(looped, "A")
+
+
+def test_linkml_does_not_follow_imports() -> None:
+    schema = {"imports": ["linkml:types", "core"], "classes": {"A": {"attributes": {"x": {}}}}}
+    with pytest.raises(ValueError, match="core"):
+        linkml_attribute_names(schema, "A")
 
 
 def test_profile_slots_must_be_attributes() -> None:
-    names = set(linkml_attribute_names(SCHEMA))
+    names = set(linkml_attribute_names(SCHEMA, "Sample"))
     assert profile_unknown_slots(PROFILE, names) == []
     broken = PROFILE.model_copy(update={"search": ["sample_name", "missing"]})
     assert profile_unknown_slots(broken, names) == ["missing"]

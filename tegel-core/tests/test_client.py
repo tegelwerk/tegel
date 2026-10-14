@@ -14,7 +14,10 @@ PROFILE = SearchProfile.model_validate(
     {
         "id": "https://example.com/profile",
         "name": "Sample search",
-        "schema": "sample.yaml",
+        "schema_id": "https://example.com/sample",
+        "schema_version": "1",
+        "schema_path": "sample.yaml",
+        "class": "Sample",
         "search": ["kind"],
         "properties": ["kind"],
         "entity": {"name": "sample_name", "identifier": "uuid", "dateCreated": "recorded"},

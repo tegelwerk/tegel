@@ -22,7 +22,7 @@ Read these, in this order, before you write code.
 1. [plugins.md](../plugins.md), section "What an incarnation provides".
 2. [dataserver.md](../dataserver.md), sections "Responsibilities" and "HTTP API".
 3. `tegel-base/examples/toy/pyproject.toml`
-4. `tegel-base/examples/toy/schema/record.yaml`
+4. `tegel-base/examples/schemas/toy/record.yaml`, the external schema the toy profile names
 5. `tegel-base/examples/toy/schema/profile.yaml`
 6. `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py`
 7. `tegel-base/examples/toy/tests/test_extractor.py`
@@ -33,7 +33,6 @@ Read these, in this order, before you write code.
 Write only these files in the incarnation package. Create no other files.
 
 - `pyproject.toml`
-- `schema/<record>.yaml`
 - `schema/profile.yaml`
 - `src/tegel/<modality>/dataserver/__init__.py`
 - `tests/test_plugin.py`
@@ -68,18 +67,11 @@ Supply these values. Leave every other contract as the reference server already 
 
 Do not register `tegel.auth`, `tegel.storage`, `tegel.index`, or `tegel.previewers`.
 
-**Schema.** One LinkML YAML document. One class, marked `tree_root`. Every name you write into catalog metadata is an attribute of that class, including:
+**Schema.** The human supplies `schema_id`, `schema_version`, `schema_path` and `class`. Do not write or edit a schema. A field you need that the class lacks is a stop: report it for the schema owner.
 
-- `plugin_id`
-- `source_name`
-- `key`
-- `payload_uri`
-- `resource_type`
-- `resource_type_version`
+Every key you write into catalog metadata must be a slot of that class, including `plugin_id` and `source_name`. Write `key`, `payload_uri`, `resource_type`, and `resource_type_version` only when the class defines them.
 
-Add the modality fields the task requires. A metadata field that is not a schema attribute is a mistake. Add the attribute, then add it to the profile only when it is searchable or copied into the RO-Crate.
-
-**Profile.** `schema` is the schema filename beside this file. `search`, `properties`, and `entity.name`, `entity.identifier`, and `entity.dateCreated` are attributes of the tree-root class. `load_spec` rejects any other slot. `search` lists categorical fields only: codes, names, enumerations, and booleans stored as `true` or `false`. Numbers, timestamps, free text, and comma-joined lists go in `properties`, because search comparison is exact string equality.
+**Profile.** Copy the four schema values into the profile as `schema_id`, `schema_version`, `schema_path` (relative to `TEGEL_SCHEMA_ROOT`), and `class`. `search`, `properties`, and `entity.name`, `entity.identifier`, and `entity.dateCreated` are slots of that class. `load_spec` rejects any other field. `search` lists categorical fields only: codes, names, enumerations, and booleans stored as `true` or `false`. Numbers, timestamps, free text, and comma-joined lists go in `properties`, because search comparison is exact string equality.
 
 **Extractor.** Subclass `tegel.core.plugins.Extractor`. The class constructs with no arguments.
 
@@ -112,6 +104,7 @@ Stop, and do not edit further, when the next change would do any of the followin
 - Read array chunk bytes inside `describe`.
 - Invent a facility path layout, file format, or naming convention that is not in the supplied fixture.
 - Re-implement discovery or record building that the upstream producer already does.
+- Write, copy, or edit a LinkML schema, or need a field the supplied class lacks. Report the field for the schema owner.
 
 ## Do not copy that package's launcher
 
@@ -119,7 +112,7 @@ The package [tegelwerk/xfm_ssrl_tegel](https://github.com/tegelwerk/xfm_ssrl_teg
 
 Do not copy the rest of that package. It misses this contract.
 
-- `schema/measurement.yaml` has no `plugin_id`, `source_name`, `resource_type`, or `resource_type_version`, while `process` still writes `plugin_id` and `source_name`. The toy schema includes the fields `process` writes. A metadata field is a schema attribute.
+- `schema/measurement.yaml` is a schema inside the incarnation. An incarnation names a schema; it never contains one.
 - `tests/test_plugin.py` never calls `assert_incarnation`. A missing token, an unknown search field, and `POST /resources` are unchecked.
 - `launch.py`, `start_all.sh`, and `Containerfile` start Keycloak and build a server image. That is outside this incarnation. Do not create those files.
 
@@ -129,9 +122,9 @@ Do not copy the `dash` and `actions` packages in that repository. Follow the Act
 
 Call `assert_incarnation` from `tegel.dataserver.testing` on this `dataserver/` package. Do not replace it with a private check. A passing `pytest` run of hand-written assertions is not a substitute.
 
-`assert_incarnation` checks the package layout, runtime and dev dependencies, entry points, the profile, search-field ranges, the extractor on the positive fixture and the rejected input, `describe`, and the read API. Build the app with `create_app`, write one row with `insert_record`, and pass that server to `assert_incarnation`. Follow the sequence in `tegel-base/tests/integration/test_read_api.py`.
+`assert_incarnation` checks the package layout, that the package contains no LinkML schema, runtime and dev dependencies, entry points, the profile and its external schema, search-field ranges, the extractor on the positive fixture and the rejected input, `describe`, and the read API. Build the app with `create_app`, write one row with `insert_record`, and pass that server to `assert_incarnation`. Follow the sequence in `tegel-base/tests/integration/test_read_api.py`.
 
-From the incarnation package:
+From the incarnation package, with `TEGEL_SCHEMA_ROOT` set to the directory the human named:
 
 ```bash
 uv run pytest

@@ -2,7 +2,7 @@
 
 Tegel is a shared base that a facility extends into a modality-specific incarnation.
 
-This repository holds the specification and the reference servers. An incarnation is a separate installable package. It registers resource types, extractors, and readers, and it supplies a LinkML schema and a search profile. Modality vocabulary stays in the incarnation.
+This repository holds the specification and the reference servers. An incarnation is a separate installable package. It registers resource types, extractors, and readers, and it supplies a search profile that names an external LinkML schema and class. Modality vocabulary stays in the incarnation.
 
 ## Layout
 

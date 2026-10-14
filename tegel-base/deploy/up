@@ -2,14 +2,14 @@
 set -eu
 cd "$(dirname "$0")"
 if [ ! -f edge.env ]; then
-  echo "Copy edge.env.example to edge.env and set the public origin, bind, output, profile, and records." >&2
+  echo "Copy edge.env.example to edge.env and set the public origin, bind, output, profile, schema root, and records." >&2
   exit 1
 fi
 set -a
 # shellcheck disable=SC1091
 . ./edge.env
 set +a
-for name in PUBLIC_ORIGIN TEGEL_BIND TLS_MODE PATH_DATA PATH_AUTH PATH_PREFECT PORT_DATA PORT_AUTH PORT_PREFECT TEGEL_OUTPUT TEGEL_PROFILE TEGEL_RECORDS; do
+for name in PUBLIC_ORIGIN TEGEL_BIND TLS_MODE PATH_DATA PATH_AUTH PATH_PREFECT PORT_DATA PORT_AUTH PORT_PREFECT TEGEL_OUTPUT TEGEL_PROFILE TEGEL_SCHEMA_ROOT TEGEL_RECORDS; do
   eval "value=\${$name-}"
   if [ -z "$value" ]; then
     echo "$name is required in edge.env" >&2

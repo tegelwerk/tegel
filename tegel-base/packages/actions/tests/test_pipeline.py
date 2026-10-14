@@ -7,6 +7,9 @@ from tegel.actions.credentials import ensure_credentials
 from tegel.actions.merge import merge_staging
 from tegel.actions.realm import redirect_uris
 from tegel.actions.staging import catalog_key, claim_paths, write_staging
+from tegel.core.plugins import PluginContractError
+
+PROFILE = Path(__file__).resolve().parents[3] / "examples" / "toy" / "schema" / "profile.yaml"
 
 
 def test_redirect_uris_follow_the_public_data_prefix() -> None:
@@ -34,7 +37,8 @@ def test_catalog_key_rejects_a_slash() -> None:
         raise AssertionError("a slash in the key must be rejected")
 
 
-def test_claimed_record_is_merged_into_production(tmp_path: Path) -> None:
+def test_claimed_record_is_merged_into_production(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("TEGEL_PROFILE", str(PROFILE))
     raw = tmp_path / "records" / "note.npy"
     raw.parent.mkdir()
     raw.write_bytes(b"not-read")
@@ -58,3 +62,20 @@ def test_claimed_record_is_merged_into_production(tmp_path: Path) -> None:
             ("rec-note",),
         ).fetchone()
     assert row == ("rec-note",)
+
+
+def test_staging_rejects_a_key_the_class_lacks(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("TEGEL_PROFILE", str(PROFILE))
+    raw = tmp_path / "records" / "note.npy"
+    raw.parent.mkdir()
+    raw.write_bytes(b"not-read")
+    raw.with_suffix(".json").write_text(
+        '{"uuid": "rec-note", "exposure_count": "7"}',
+        encoding="utf-8",
+    )
+    try:
+        write_staging([str(raw)], tmp_path / "staging.db")
+    except PluginContractError as exc:
+        assert "exposure_count" in str(exc)
+    else:
+        raise AssertionError("a metadata key that is not a class slot must be rejected")

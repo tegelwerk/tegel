@@ -11,7 +11,9 @@ from tegel.dataserver.auth.keycloak import AuthenticationError, KeycloakAuth
 from tegel.dataserver.config import ServerConfig
 from tegel.dataserver.testing import OIDCIssuer
 
-PROFILE = Path(__file__).resolve().parents[3] / "examples" / "toy" / "schema" / "profile.yaml"
+EXAMPLES = Path(__file__).resolve().parents[3] / "examples"
+PROFILE = EXAMPLES / "toy" / "schema" / "profile.yaml"
+SCHEMA_ROOT = EXAMPLES / "schemas"
 
 
 class StaticAuth:
@@ -78,6 +80,7 @@ def _config(catalog: Path, issued: object) -> ServerConfig:
         public_origin="http://test",
         catalog_uri=f"sqlite:///{catalog}",
         profile_path=PROFILE,
+        schema_root=SCHEMA_ROOT,
         issuer_url=issued.issuer,  # type: ignore[attr-defined]
         audience=issued.audience,  # type: ignore[attr-defined]
         client_id=issued.client_id,  # type: ignore[attr-defined]

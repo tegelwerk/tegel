@@ -37,7 +37,7 @@ Those ETL steps are specified in [plugins.md](plugins.md) so an incarnation can 
 
 ## Reference process
 
-The reference data server is a process, not an unmodified `tiled serve`. It reads the installed incarnation spec — entry points, the LinkML schema, and the search profile — and launches Tiled already shaped to this document: the read API above, the search route left in place, Keycloak unless replaced, and the structure families a reader reports.
+The reference data server is a process, not an unmodified `tiled serve`. It reads the installed incarnation spec — entry points and the search profile — and the LinkML schema that profile names under `TEGEL_SCHEMA_ROOT`, and launches Tiled already shaped to this document: the read API above, the search route left in place, Keycloak unless replaced, and the structure families a reader reports.
 
 An incarnation changes what that process loads. It does not change the HTTP contract.
 
@@ -156,12 +156,17 @@ A resource type has:
 A search profile has:
 
 - `id`, `name`
-- `schema` — path or id of the LinkML schema, resolved next to the profile by the server
+- `schema_id` — must equal the loaded LinkML document's `id`
+- `schema_version` — must equal that document's `version`
+- `schema_path` — the document's path relative to `TEGEL_SCHEMA_ROOT`
+- `class` — the class whose slots define a record
 - `search` — field names a client may pass to `GET /search`
 - `properties` — field names copied into the RO-Crate as `additionalProperty`
 - `entity.name`, `entity.identifier`, `entity.dateCreated` — metadata keys for the Dataset `name`, `identifier`, and `dateCreated`
 
-The server loads the LinkML document as YAML and reads attribute names from the `tree_root` class, or from the only class when the document has one class. A profile slot that is not one of those attributes is rejected at startup. This package does not depend on the LinkML runtime.
+The server loads `$TEGEL_SCHEMA_ROOT/<schema_path>` as YAML. An absolute `schema_path`, a path that leaves the root, a mismatched `id` or `version`, or a missing class is an error. The schema is not fetched over the network. An `imports` entry other than `linkml:*` is an error, because imports are not followed.
+
+The slots of a class are its `attributes` keys and its `slots` list, plus the same from its `is_a` ancestors in the same document. A profile field that is not one of those slots is rejected at startup. At ETL time, a record whose metadata has a key that is not a slot is rejected. Provenance keys such as `plugin_id` and `source_name` are slots only when the schema defines them. This package does not depend on the LinkML runtime and does not check value types.
 
 JSON Schema files under `specs/generated/` describe the pydantic wire models. They are not the authoring format for a resource type.
 

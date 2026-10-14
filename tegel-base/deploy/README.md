@@ -8,9 +8,11 @@ From this directory:
 
 ```bash
 cp edge.env.example edge.env
-# set PUBLIC_ORIGIN, TEGEL_BIND, TEGEL_OUTPUT, TEGEL_PROFILE, and TEGEL_RECORDS
+# set PUBLIC_ORIGIN, TEGEL_BIND, TEGEL_OUTPUT, TEGEL_PROFILE, TEGEL_SCHEMA_ROOT, and TEGEL_RECORDS
 ./up
 ```
+
+`TEGEL_SCHEMA_ROOT` is a checkout of the schema's own repository. The profile's `schema_path` is relative to it, and it is mounted read-only into the data server and the ETL worker.
 
 `./up` derives the Caddy listen port from `PUBLIC_ORIGIN` and starts the stack. The data server, the ETL worker, and the catalog updater use the image built from [xfm_ssrl_tegel/Containerfile](../../../xfm_ssrl_tegel/Containerfile).
 

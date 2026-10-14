@@ -20,6 +20,7 @@ class ServerConfig(BaseModel):
     public_origin: str = Field(min_length=1)
     catalog_uri: str = Field(min_length=1)
     profile_path: Path
+    schema_root: Path
     issuer_url: str = Field(min_length=1)
     audience: str = Field(min_length=1)
     client_id: str = Field(min_length=1)
@@ -47,6 +48,7 @@ class ServerConfig(BaseModel):
             public_origin=required("TEGEL_PUBLIC_ORIGIN"),
             catalog_uri=required("TEGEL_CATALOG_URI"),
             profile_path=Path(required("TEGEL_PROFILE")),
+            schema_root=Path(required("TEGEL_SCHEMA_ROOT")),
             issuer_url=required("TEGEL_OIDC_ISSUER"),
             audience=required("TEGEL_OIDC_AUDIENCE"),
             client_id=required("TEGEL_OIDC_CLIENT_ID"),

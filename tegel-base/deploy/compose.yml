@@ -119,10 +119,12 @@ services:
       TEGEL_HOST: 0.0.0.0
       TEGEL_PORT: ${PORT_DATA}
       TEGEL_PROFILE: /spec/${TEGEL_PROFILE_NAME}
+      TEGEL_SCHEMA_ROOT: /schemas
       TEGEL_CATALOG_URI: sqlite:////output/catalog.db
     volumes:
       - ${TEGEL_OUTPUT}:/output
       - ${TEGEL_SPEC_DIR}:/spec:ro
+      - ${TEGEL_SCHEMA_ROOT}:/schemas:ro
       - ${TEGEL_RECORDS}:/records:ro
       - ./dataserver-entrypoint.sh:/edge/dataserver-entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/edge/dataserver-entrypoint.sh"]
@@ -152,6 +154,8 @@ services:
     environment:
       TEGEL_OUTPUT: /output
       TEGEL_RECORDS: /records
+      TEGEL_PROFILE: /spec/${TEGEL_PROFILE_NAME}
+      TEGEL_SCHEMA_ROOT: /schemas
       TEGEL_OIDC_ISSUER: ${PUBLIC_ORIGIN}${PATH_AUTH}/realms/tegel
       TEGEL_OIDC_CLIENT_ID: tegel
       TEGEL_REFRESH_URL: http://dataserver:${PORT_DATA}/refresh-catalog
@@ -159,6 +163,8 @@ services:
     volumes:
       - ${TEGEL_OUTPUT}:/output
       - ${TEGEL_RECORDS}:/records:ro
+      - ${TEGEL_SPEC_DIR}:/spec:ro
+      - ${TEGEL_SCHEMA_ROOT}:/schemas:ro
       - ./worker-entrypoint.sh:/edge/worker-entrypoint.sh:ro
     entrypoint: ["/bin/sh", "/edge/worker-entrypoint.sh"]
     command: ["python", "-m", "tegel.actions.ingest"]

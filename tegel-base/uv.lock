@@ -4348,12 +4348,14 @@ source = { editable = "../tegel-core" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "httpx" },
     { name = "pydantic", specifier = ">=2" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata.requires-dev]

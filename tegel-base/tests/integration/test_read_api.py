@@ -13,11 +13,14 @@ from tegel.core.plugins import check_package
 from tegel.dataserver.app import create_app
 from tegel.dataserver.catalog import catalog_has_graph, insert_record
 from tegel.dataserver.config import ServerConfig
+from tegel.dataserver.spec import load_spec, record_slots
 from tegel.dataserver.testing import OIDCIssuer, assert_incarnation
 from tegel.toy.dataserver import ToyExtractor
 
-TOY = Path(__file__).resolve().parents[2] / "examples" / "toy"
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+TOY = EXAMPLES / "toy"
 PROFILE = TOY / "schema" / "profile.yaml"
+SCHEMA_ROOT = EXAMPLES / "schemas"
 
 
 def test_search_get_and_open_data(tmp_path: Path) -> None:
@@ -50,12 +53,14 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
         channel="bin",
     )
     plugin = ToyExtractor()
+    slots = record_slots(*load_spec(PROFILE, SCHEMA_ROOT))
     catalog = tmp_path / "catalog.db"
     with OIDCIssuer() as issued:
         config = ServerConfig(
             public_origin="http://test",
             catalog_uri=f"sqlite:///{catalog}",
             profile_path=PROFILE,
+            schema_root=SCHEMA_ROOT,
             issuer_url=issued.issuer,
             audience=issued.audience,
             client_id=issued.client_id,
@@ -69,7 +74,9 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
             ("rec-raw", "array", raw),
             ("rec-derived", "array", derived),
         ):
-            package = check_package(plugin, plugin.process(str(path), {"key": key}))
+            package = check_package(
+                plugin, plugin.process(str(path), {"key": key}), slots=slots
+            )
             insert_record(
                 app.state.tegel_catalog,
                 key=key,
@@ -104,6 +111,7 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
                 search_value="red",
                 positive_fixture=derived,
                 rejected_input=blob,
+                schema_root=SCHEMA_ROOT,
             )
             with DataClient(
                 "http://testserver",

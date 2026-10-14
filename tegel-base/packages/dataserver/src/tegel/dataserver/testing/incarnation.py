@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import yaml
 
 from tegel.core.contracts.resources import (
     DataDescriptor,
@@ -15,8 +16,10 @@ from tegel.core.contracts.resources import (
     StructureFamily,
     resource_uri,
 )
+from tegel.core.contracts.types import class_slot_specs
 from tegel.core.plugins import PluginContractError, check_package
-from tegel.dataserver.spec import load_spec
+from tegel.core.spec import schema_root_from_env
+from tegel.dataserver.spec import load_spec, resolve_schema_path
 from tegel.dataserver.testing.conformance import assert_read_only_api
 from tegel.dataserver.testing.layout import assert_incarnation_layout
 
@@ -49,22 +52,51 @@ def assert_incarnation_project(package_root: Path | str) -> None:
     _check_entry_points(project.get("entry-points"))
 
 
-def assert_incarnation_profile(package_root: Path | str) -> None:
-    """Fail when the profile is unloadable or a search field is not categorical."""
-    profile_path = Path(package_root) / "schema" / "profile.yaml"
+def assert_incarnation_ships_no_schema(package_root: Path | str) -> None:
+    """Fail when the package contains a LinkML document (top-level ``classes:``)."""
+    root = Path(package_root)
+    found: list[str] = []
+    for path in sorted([*root.rglob("*.yaml"), *root.rglob("*.yml")]):
+        if any(part.startswith(".") or part == "__pycache__" for part in path.parts):
+            continue
+        try:
+            document = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError):
+            continue
+        if isinstance(document, dict) and "classes" in document:
+            found.append(path.relative_to(root).as_posix())
+    if found:
+        names = ", ".join(found)
+        raise AssertionError(f"an incarnation names a schema and contains none: {names}")
+
+
+def assert_incarnation_profile(
+    package_root: Path | str,
+    schema_root: Path | str | None = None,
+) -> frozenset[str]:
+    """Fail when the profile is unloadable, its schema is in the package, or a
+    search field is not categorical. Return the class's slot names.
+
+    ``schema_root`` defaults to ``TEGEL_SCHEMA_ROOT``.
+    """
+    root = Path(package_root).resolve()
+    profile_path = root / "schema" / "profile.yaml"
     try:
-        profile, schema = load_spec(profile_path)
+        schema_dir = Path(schema_root) if schema_root is not None else schema_root_from_env()
+        profile, schema = load_spec(profile_path, schema_dir)
+        schema_file = resolve_schema_path(schema_dir, profile.schema_path)
     except (OSError, ValueError) as exc:
         raise AssertionError(str(exc)) from exc
-    attributes = _tree_root_attributes(schema)
+    if schema_file == root or root in schema_file.parents:
+        raise AssertionError(f"schema {profile.schema_path} is inside the incarnation package")
+    slots = class_slot_specs(schema, profile.class_name)
     for name in profile.search:
-        spec = attributes.get(name)
-        if not isinstance(spec, dict):
-            raise AssertionError(f"search field {name} has no attribute spec")
+        spec = slots[name]
         if spec.get("multivalued") is True:
             raise AssertionError(f"search field {name} is multivalued")
         if _range_name(spec.get("range")) in _FORBIDDEN_RANGES:
             raise AssertionError(f"search field {name} is not categorical")
+    return frozenset(slots)
 
 
 def assert_incarnation(
@@ -78,12 +110,17 @@ def assert_incarnation(
     search_value: str,
     positive_fixture: Path | str,
     rejected_input: Path | str,
+    schema_root: Path | str | None = None,
 ) -> None:
-    """Check layout, project file, profile, extractor, reader, and the read API."""
+    """Check layout, project file, profile, extractor, reader, and the read API.
+
+    ``schema_root`` defaults to ``TEGEL_SCHEMA_ROOT``.
+    """
     root = Path(package_root)
     assert_incarnation_layout(root)
+    assert_incarnation_ships_no_schema(root)
     assert_incarnation_project(root)
-    assert_incarnation_profile(root)
+    slots = assert_incarnation_profile(root, schema_root)
     extractor, reader = _load_plugins(root)
     positive = str(positive_fixture)
     rejected = str(rejected_input)
@@ -92,7 +129,7 @@ def assert_incarnation(
     if extractor.validate(rejected) is not False:
         raise AssertionError("validate on the rejected input must be false")
     try:
-        package = check_package(extractor, extractor.process(positive, {}))
+        package = check_package(extractor, extractor.process(positive, {}), slots=slots)
     except PluginContractError as exc:
         raise AssertionError(str(exc)) from exc
     type_name = package.metadata.get("resource_type")
@@ -206,28 +243,6 @@ def _distribution_name(requirement: str) -> str:
             name = name.split(marker, 1)[0]
             break
     return name.strip().lower().replace("_", "-").replace(".", "-")
-
-
-def _tree_root_attributes(schema: dict[str, Any]) -> dict[str, Any]:
-    classes = schema.get("classes") or {}
-    if not isinstance(classes, dict) or not classes:
-        raise AssertionError("LinkML schema has no classes")
-    chosen: dict[str, Any] | None = None
-    for spec in classes.values():
-        if isinstance(spec, dict) and spec.get("tree_root"):
-            chosen = spec
-            break
-    if chosen is None:
-        if len(classes) != 1:
-            raise AssertionError("LinkML schema must mark one class tree_root")
-        only = next(iter(classes.values()))
-        if not isinstance(only, dict):
-            raise AssertionError("LinkML class has no attributes")
-        chosen = only
-    attributes = chosen.get("attributes")
-    if not isinstance(attributes, dict):
-        raise AssertionError("LinkML class has no attributes")
-    return attributes
 
 
 def _range_name(value: object) -> str:

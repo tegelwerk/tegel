@@ -1,5 +1,6 @@
 id: https://w3id.org/tegel/toy/record
 name: toy_record
+version: "1"
 classes:
   Record:
     tree_root: true

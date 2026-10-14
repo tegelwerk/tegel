@@ -1,6 +1,9 @@
 id: https://w3id.org/tegel/toy/profile
 name: toy records
-schema: record.yaml
+schema_id: https://w3id.org/tegel/toy/record
+schema_version: "1"
+schema_path: toy/record.yaml
+class: Record
 search:
   - channel
 properties:

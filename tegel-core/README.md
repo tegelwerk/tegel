@@ -12,7 +12,7 @@ The copyright line in `LICENSE` is a BSD-3-Clause placeholder pending confirmati
 - `src/tegel/core/` — pydantic models, plugin registry, and `DataClient`.
 - `scripts/export_schemas.py` — writes JSON Schema and OpenAPI for the wire models into `specs/generated/`.
 
-Project metadata is authored as LinkML YAML plus a search profile. The generated JSON Schema describes these wire models. It is not a second way to author a resource type.
+Project metadata is authored as LinkML YAML in the schema's own repository. An incarnation's search profile names that schema and one class. The generated JSON Schema describes these wire models. It is not a second way to author a resource type.
 
 ## Install
 

@@ -7,7 +7,13 @@ from pathlib import Path
 
 from tegel.core.contracts.resources import Resource, StructureFamily, resource_uri
 from tegel.core.plugins import check_package
+from tegel.core.spec import load_spec, record_slots
 from tegel.toy.dataserver import ToyExtractor, ToyReader
+
+EXAMPLES = Path(__file__).resolve().parents[2]
+SLOTS = record_slots(
+    *load_spec(EXAMPLES / "toy" / "schema" / "profile.yaml", EXAMPLES / "schemas")
+)
 
 
 def test_extractor_reads_the_sidecar_and_reader_stops_at_the_header(tmp_path: Path) -> None:
@@ -24,7 +30,9 @@ def test_extractor_reads_the_sidecar_and_reader_stops_at_the_header(tmp_path: Pa
     plugin = ToyExtractor()
     assert plugin.validate(str(payload)) is True
     assert plugin.validate(str(tmp_path / "notes.txt")) is False
-    package = check_package(plugin, plugin.process(str(payload), {"key": "rec-derived"}))
+    package = check_package(
+        plugin, plugin.process(str(payload), {"key": "rec-derived"}), slots=SLOTS
+    )
     assert package.metadata["plugin_id"] == "toy-record"
     assert package.metadata["channel"] == "red"
     assert package.metadata["key"] == "rec-derived"

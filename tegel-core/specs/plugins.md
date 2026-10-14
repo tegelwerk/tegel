@@ -4,7 +4,7 @@ An incarnation is an installable Python package. It depends on `tegel-core` and 
 
 Discovery uses `importlib.metadata` entry points, sorted by entry point name. That order is the deterministic order for `validate`. ProductionLambda scanned a plugin directory by filename; Tegel uses entry points so an incarnation can be installed rather than bind-mounted. The selection rule is the same: sort by name, then take the first `validate` that returns true.
 
-The reference data server reads these entry points, the LinkML schema, and the search profile, then launches Tiled in the form specified in [dataserver.md](dataserver.md). The Tiled release must include the entity/link graph (0.2.15 or any later release that still ships it).
+The reference data server reads these entry points, the search profile, and the LinkML schema that profile names under `TEGEL_SCHEMA_ROOT`, then launches Tiled in the form specified in [dataserver.md](dataserver.md). The Tiled release must include the entity/link graph (0.2.15 or any later release that still ships it).
 
 ## Groups
 
@@ -33,6 +33,7 @@ The ETL application loads `tegel.extractors` and rejects a plugin that fails any
 - `metadata["plugin_id"]` equals the plugin id
 - `metadata["source_name"]` is a non-empty string
 - every metrics value is a float, and every metrics key is a non-empty string
+- every metadata key is a slot of the profile's class
 
 `validate` answers "this plugin can read this file", not "how sure is it". The first true result in entry-point name order wins. Remaining plugins are not called.
 
@@ -58,7 +59,7 @@ class ExamplePlugin(Extractor):
 
 The catalog id is `options["key"]` when that is a non-empty string, otherwise metadata `key` or `uuid`. There is no filename fallback.
 
-The package also supplies a LinkML schema and a search profile. `metadata_schema` on the `ResourceType` is the schema id. The profile's `search`, `properties`, and `entity` slots must be attributes of that schema's tree-root class. Adding a metadata field is a schema edit, then a profile edit if the field should be searchable or copied into the RO-Crate.
+The package also supplies a search profile. The profile names a LinkML schema by `schema_id`, `schema_version`, `schema_path`, and `class`. The schema lives in its own repository and is loaded from `TEGEL_SCHEMA_ROOT`. The incarnation does not contain it. `metadata_schema` on the `ResourceType` is the schema id. The profile's `search`, `properties`, and `entity` fields must be slots of the named class, and so must every metadata key the extractor writes, including `plugin_id` and `source_name`. A field the class lacks is a change for the schema owner. Tegel does not add it.
 
 `search` lists categorical fields only: codes, names, enumerations, and booleans stored as `true` or `false`. Numbers, timestamps, free text, and comma-joined lists go in `properties`. Search comparison is exact string equality with the value stored in catalog metadata, so those other fields do not match usefully there.
 
@@ -83,7 +84,7 @@ An index plugin implements read methods `get(resource_id)` and `keys()`. Writes 
 ## What an incarnation provides
 
 1. A package that depends on `tegel-core`.
-2. A LinkML schema and a profile YAML whose slots are schema attributes.
+2. A profile YAML that names an external LinkML schema and class, and whose fields are slots of that class.
 3. A `ResourceType` entry point whose `metadata_schema` is that schema id, with an optional `parent` for fallback.
 4. An extractor entry point that passes the contract above.
 5. A reader entry point for the payload that extractor produces.
@@ -94,12 +95,12 @@ An index plugin implements read methods `get(resource_id)` and `keys()`. Writes 
 `tegel-toy` is that package. The reference server loads it and launches Tiled.
 
 - `tegel-base/examples/toy/pyproject.toml` registers `toy-record` on `tegel.resource_types`, `tegel.extractors`, and `tegel.readers`.
-- `tegel-base/examples/toy/schema/record.yaml` is the LinkML schema. `profile.yaml` beside it selects `channel` for search and for the RO-Crate properties.
+- `tegel-base/examples/schemas/toy/record.yaml` is the LinkML schema, outside the toy package. `tegel-base/examples/toy/schema/profile.yaml` names it and its `Record` class, and selects `channel` for search and for the RO-Crate properties.
 - `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py` is the extractor and the reader. The reader returns an array descriptor from the `.npy` header and does not read the array payload. A payload that is not `.npy` is described as `bytes`.
 - `tegel-base/examples/toy/tests/test_extractor.py` checks the extractor contract.
 - `tegel-base/tests/integration/test_read_api.py` starts the reference server and runs the conformance kit: search, get, open data. It does not write through the HTTP API.
 
-Copy those three entry points, point the profile at your schema, and keep modality vocabulary in the incarnation package. The reference process reads the installed entry points and the profile path you configure. It does not import the incarnation by name.
+Copy those three entry points, point the profile at the schema you were given, and keep modality vocabulary in the incarnation package. The reference process reads the installed entry points and the profile path you configure. It does not import the incarnation by name.
 
 An agent that fills in a new incarnation follows [prompts/dataserver.md](prompts/dataserver.md). That procedure lists the writable files, the stop rules, and the checks that must pass.
 

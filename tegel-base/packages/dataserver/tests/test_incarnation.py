@@ -7,6 +7,7 @@ import pytest
 from tegel.dataserver.testing.incarnation import (
     assert_incarnation_profile,
     assert_incarnation_project,
+    assert_incarnation_ships_no_schema,
 )
 from tegel.dataserver.testing.layout import assert_incarnation_layout
 
@@ -31,9 +32,9 @@ sample = "tegel.sample.dataserver:Sample"
 _RECORD = """\
 id: https://w3id.org/tegel/sample/record
 name: sample
+version: "1"
 classes:
   Record:
-    tree_root: true
     attributes:
       sample_name:
         range: string
@@ -49,7 +50,10 @@ classes:
 _PROFILE = """\
 id: https://w3id.org/tegel/sample/profile
 name: sample
-schema: record.yaml
+schema_id: https://w3id.org/tegel/sample/record
+schema_version: "1"
+schema_path: {schema_path}
+class: Record
 search:
   - {search}
 properties: []
@@ -63,6 +67,7 @@ entity:
 def test_toy_package_matches_the_static_contract() -> None:
     assert_incarnation_layout(TOY)
     assert_incarnation_project(TOY)
+    assert_incarnation_ships_no_schema(TOY)
     assert_incarnation_profile(TOY)
 
 
@@ -110,15 +115,43 @@ def test_auth_entry_point_is_rejected(tmp_path: Path) -> None:
 
 
 def test_temporal_search_field_is_rejected(tmp_path: Path) -> None:
-    _write_schema(tmp_path, search="recorded", recorded_range="datetime", multivalued="false")
+    package, schemas = _write_schema(
+        tmp_path, search="recorded", recorded_range="datetime", multivalued="false"
+    )
     with pytest.raises(AssertionError, match="not categorical"):
-        assert_incarnation_profile(tmp_path)
+        assert_incarnation_profile(package, schemas)
 
 
 def test_multivalued_search_field_is_rejected(tmp_path: Path) -> None:
-    _write_schema(tmp_path, search="channel", recorded_range="string", multivalued="true")
+    package, schemas = _write_schema(
+        tmp_path, search="channel", recorded_range="string", multivalued="true"
+    )
     with pytest.raises(AssertionError, match="multivalued"):
-        assert_incarnation_profile(tmp_path)
+        assert_incarnation_profile(package, schemas)
+
+
+def test_external_schema_is_accepted(tmp_path: Path) -> None:
+    package, schemas = _write_schema(
+        tmp_path, search="channel", recorded_range="string", multivalued="false"
+    )
+    assert "channel" in assert_incarnation_profile(package, schemas)
+    assert_incarnation_ships_no_schema(package)
+
+
+def test_schema_inside_the_package_is_rejected(tmp_path: Path) -> None:
+    package = tmp_path / "pkg"
+    (package / "schema").mkdir(parents=True)
+    (package / "schema" / "record.yaml").write_text(
+        _RECORD.format(recorded_range="string", multivalued="false"), encoding="utf-8"
+    )
+    (package / "schema" / "profile.yaml").write_text(
+        _PROFILE.format(search="channel", schema_path="schema/record.yaml"),
+        encoding="utf-8",
+    )
+    with pytest.raises(AssertionError, match="inside the incarnation package"):
+        assert_incarnation_profile(package, package)
+    with pytest.raises(AssertionError, match="schema/record.yaml"):
+        assert_incarnation_ships_no_schema(package)
 
 
 def _module(root: Path, source: str) -> None:
@@ -132,11 +165,19 @@ def _write_project(root: Path, dependencies: str) -> None:
     (root / "pyproject.toml").write_text(text, encoding="utf-8")
 
 
-def _write_schema(root: Path, *, search: str, recorded_range: str, multivalued: str) -> None:
-    schema = root / "schema"
-    schema.mkdir()
-    (schema / "record.yaml").write_text(
+def _write_schema(
+    root: Path, *, search: str, recorded_range: str, multivalued: str
+) -> tuple[Path, Path]:
+    schemas = root / "schemas"
+    (schemas / "sample").mkdir(parents=True)
+    (schemas / "sample" / "record.yaml").write_text(
         _RECORD.format(recorded_range=recorded_range, multivalued=multivalued),
         encoding="utf-8",
     )
-    (schema / "profile.yaml").write_text(_PROFILE.format(search=search), encoding="utf-8")
+    package = root / "pkg"
+    (package / "schema").mkdir(parents=True)
+    (package / "schema" / "profile.yaml").write_text(
+        _PROFILE.format(search=search, schema_path="sample/record.yaml"),
+        encoding="utf-8",
+    )
+    return package, schemas

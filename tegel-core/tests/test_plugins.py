@@ -15,6 +15,8 @@ from tegel.core.plugins import (
     first_true,
 )
 
+SLOTS = frozenset({"plugin_id", "source_name", "uuid"})
+
 
 class _JsonPlugin(Extractor):
     def __init__(self, plugin_id: str = "json-v1", calls: list[str] | None = None) -> None:
@@ -114,7 +116,7 @@ def test_registry_checks_contract_and_selects_by_name_order(tmp_path: Path) -> N
     )
     chosen = registry.extractor_for(str(source))
     assert chosen.plugin_id == "json-v1"
-    package = check_package(chosen, chosen.process(str(source), {}))
+    package = check_package(chosen, chosen.process(str(source), {}), slots=SLOTS)
     assert package.metadata["source_name"] == "record.json"
     installed = [row for row in registry.installed() if row.group == "tegel.extractors"]
     assert installed[0].name == "a-plugin"
@@ -149,4 +151,16 @@ def test_package_requires_a_real_file(tmp_path: Path) -> None:
         metrics={},
     )
     with pytest.raises(PluginContractError, match="readable"):
-        check_package(plugin, package)
+        check_package(plugin, package, slots=SLOTS)
+
+
+def test_metadata_keys_must_be_class_slots(tmp_path: Path) -> None:
+    source = tmp_path / "record.json"
+    source.write_text("{}", encoding="utf-8")
+    plugin = JsonPlugin()
+    package = plugin.process(str(source), {})
+    package.metadata["detector_distance"] = "120"
+    with pytest.raises(PluginContractError, match="detector_distance"):
+        check_package(plugin, package, slots=SLOTS)
+    with pytest.raises(PluginContractError, match="uuid"):
+        check_package(plugin, plugin.process(str(source), {}), slots={"plugin_id", "source_name"})

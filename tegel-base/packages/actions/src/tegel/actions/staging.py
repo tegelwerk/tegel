@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
 from tegel.core.plugins import PluginContractError, Registry, check_package
+from tegel.core.spec import load_spec, record_slots, schema_root_from_env
 
 
 def catalog_key(metadata: dict[str, Any]) -> str:
@@ -36,8 +38,21 @@ def claim_paths(root: Path) -> list[str]:
     return accepted
 
 
+def profile_slots() -> frozenset[str]:
+    """Slots of the class named by ``TEGEL_PROFILE``, from ``TEGEL_SCHEMA_ROOT``."""
+    value = os.environ.get("TEGEL_PROFILE", "").strip()
+    if not value:
+        raise RuntimeError("TEGEL_PROFILE is required")
+    profile, schema = load_spec(Path(value), schema_root_from_env())
+    return record_slots(profile, schema)
+
+
 def write_staging(paths: list[str], staging: Path) -> int:
-    """Claim each path and write one node into a new staging catalog."""
+    """Claim each path and write one node into a new staging catalog.
+
+    Metadata keys must be slots of the profile's class.
+    """
+    slots = profile_slots()
     registry = Registry()
     tree = _open(staging)
     count = 0
@@ -47,7 +62,7 @@ def write_staging(paths: list[str], staging: Path) -> int:
         except PluginContractError:
             print(f"skipped {raw}", flush=True)
             continue
-        package = check_package(plugin, plugin.process(raw, {}))
+        package = check_package(plugin, plugin.process(raw, {}), slots=slots)
         key = catalog_key(package.metadata)
         _write_node(tree, key=key, metadata=package.metadata)
         count += 1

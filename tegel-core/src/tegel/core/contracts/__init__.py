@@ -25,6 +25,7 @@ from tegel.core.contracts.resources import (
 from tegel.core.contracts.types import (
     ResourceType,
     SearchProfile,
+    class_slot_specs,
     linkml_attribute_names,
     profile_unknown_slots,
     type_chain,
@@ -48,6 +49,7 @@ __all__ = [
     "SearchResult",
     "StructureFamily",
     "build_search_crate",
+    "class_slot_specs",
     "hit_from_metadata",
     "linkml_attribute_names",
     "metadata_matches",

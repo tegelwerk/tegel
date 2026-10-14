@@ -26,7 +26,7 @@ def create_app(config: ServerConfig) -> FastAPI:
     when the catalog is catalog-backed, with the read API mounted on it.
     Anonymous access is off. The process does not run ETL.
     """
-    profile, _schema = load_spec(config.profile_path)
+    profile, _schema = load_spec(config.profile_path, config.schema_root)
     tree = open_catalog(config.catalog_uri)
     registry = load_registry()
     auth = build_auth(registry, config)

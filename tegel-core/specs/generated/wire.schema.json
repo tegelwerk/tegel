@@ -32,7 +32,7 @@
     "description": "What a server implements, returned by ``GET /capabilities``.",
     "properties": {
       "spec_version": {
-        "default": "0.1.0",
+        "default": "0.2.0",
         "title": "Spec Version",
         "type": "string"
       },
@@ -718,7 +718,7 @@
       }
     },
     "additionalProperties": false,
-    "description": "Which schema fields are searchable and which appear in the search document.",
+    "description": "Which class slots are searchable and which appear in the search document.\n\nThe profile names an external LinkML schema. ``schema_path`` is relative to\nthe schema root the caller configures.",
     "properties": {
       "id": {
         "minLength": 1,
@@ -730,9 +730,24 @@
         "title": "Name",
         "type": "string"
       },
-      "schema": {
+      "schema_id": {
         "minLength": 1,
-        "title": "Schema",
+        "title": "Schema Id",
+        "type": "string"
+      },
+      "schema_version": {
+        "minLength": 1,
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "schema_path": {
+        "minLength": 1,
+        "title": "Schema Path",
+        "type": "string"
+      },
+      "class": {
+        "minLength": 1,
+        "title": "Class",
         "type": "string"
       },
       "search": {
@@ -756,7 +771,10 @@
     "required": [
       "id",
       "name",
-      "schema",
+      "schema_id",
+      "schema_version",
+      "schema_path",
+      "class",
       "search",
       "properties",
       "entity"

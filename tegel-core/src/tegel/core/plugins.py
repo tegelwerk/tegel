@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from importlib.metadata import EntryPoints, entry_points
 from pathlib import Path
 from typing import Any, Protocol
@@ -176,8 +176,17 @@ def check_decision(plugin: Extractor, decision: object) -> bool:
     return decision
 
 
-def check_package(plugin: Extractor, package: object) -> ProcessedDataPackage:
-    """Reject a process result that is not a usable package."""
+def check_package(
+    plugin: Extractor,
+    package: object,
+    *,
+    slots: Collection[str],
+) -> ProcessedDataPackage:
+    """Reject a process result that is not a usable package.
+
+    ``slots`` are the slot names of the profile's class. A metadata key that is
+    not one of them is an error, provenance keys included.
+    """
     plugin_id = plugin.plugin_id
     if not isinstance(package, ProcessedDataPackage):
         raise PluginContractError(f"{plugin_id}: process must return a ProcessedDataPackage")
@@ -195,6 +204,11 @@ def check_package(plugin: Extractor, package: object) -> ProcessedDataPackage:
             raise PluginContractError(f"{plugin_id}: metrics keys must be non-empty strings")
         if not isinstance(value, float):
             raise PluginContractError(f"{plugin_id}: metrics[{key!r}] must be a float")
+    allowed = set(slots)
+    extra = sorted(key for key in package.metadata if key not in allowed)
+    if extra:
+        names = ", ".join(extra)
+        raise PluginContractError(f"{plugin_id}: metadata keys are not class slots: {names}")
     return package
 
 
