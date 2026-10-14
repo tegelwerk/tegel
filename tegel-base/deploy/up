@@ -47,5 +47,17 @@ export PUBLIC_HOST CADDY_LISTEN
 TEGEL_SPEC_DIR=$(dirname "$TEGEL_PROFILE")
 TEGEL_PROFILE_NAME=$(basename "$TEGEL_PROFILE")
 export TEGEL_SPEC_DIR TEGEL_PROFILE_NAME
-mkdir -p "$TEGEL_OUTPUT" tls
+if [ -n "${TEGEL_UPSTREAMS-}" ]; then
+  if [ ! -f "$TEGEL_UPSTREAMS" ]; then
+    echo "TEGEL_UPSTREAMS is not a file: $TEGEL_UPSTREAMS" >&2
+    exit 1
+  fi
+  TEGEL_UPSTREAMS_DIR=$(dirname "$TEGEL_UPSTREAMS")
+  TEGEL_UPSTREAMS_IN=/upstreams/$(basename "$TEGEL_UPSTREAMS")
+else
+  TEGEL_UPSTREAMS_DIR=$TEGEL_OUTPUT/no-upstreams
+  TEGEL_UPSTREAMS_IN=
+fi
+export TEGEL_UPSTREAMS_DIR TEGEL_UPSTREAMS_IN
+mkdir -p "$TEGEL_OUTPUT" "$TEGEL_UPSTREAMS_DIR" tls
 exec podman compose --env-file edge.env up --build "$@"

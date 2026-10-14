@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from collections.abc import Sequence
 from importlib.metadata import version
+from pathlib import Path
 from typing import Any
 
 GRAPH_FLOOR = (0, 2, 15)
@@ -33,12 +35,19 @@ def require_tiled_graph() -> str:
     return found
 
 
-def open_catalog(uri: str) -> Any:
-    """Initialize the catalog if needed and return the Tiled container."""
+def open_catalog(uri: str, readable_storage: Sequence[Path | str] = ()) -> Any:
+    """Initialize the catalog if needed and return the Tiled container.
+
+    Tiled serves an externally managed asset only under ``readable_storage``.
+    """
     require_tiled_graph()
     from tiled.catalog import from_uri
 
-    tree = from_uri(uri, init_if_not_exists=True)
+    tree = from_uri(
+        uri,
+        init_if_not_exists=True,
+        readable_storage=[str(root) for root in readable_storage],
+    )
     if not catalog_has_graph(uri):
         raise CatalogError("The catalog database has no entities table")
     return tree

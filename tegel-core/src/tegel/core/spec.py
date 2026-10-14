@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,25 @@ def schema_root_from_env() -> Path:
     if not value:
         raise ValueError(f"{SCHEMA_ROOT_ENV} is required")
     return Path(value)
+
+
+def readable_storage_from_env(environ: Mapping[str, str] | None = None) -> list[Path]:
+    """Roots Tiled may read external assets from.
+
+    ``TEGEL_READABLE_STORAGE`` lists absolute paths separated by ``os.pathsep``.
+    When it is unset, ``TEGEL_RECORDS`` is the one root. With neither, there are none.
+    """
+    env = os.environ if environ is None else environ
+    value = env.get("TEGEL_READABLE_STORAGE", "").strip() or env.get("TEGEL_RECORDS", "").strip()
+    roots: list[Path] = []
+    for item in value.split(os.pathsep):
+        if not item.strip():
+            continue
+        root = Path(item.strip())
+        if not root.is_absolute():
+            raise ValueError(f"TEGEL_READABLE_STORAGE entries must be absolute: {item.strip()}")
+        roots.append(root)
+    return roots
 
 
 def resolve_schema_path(schema_root: Path, schema_path: str) -> Path:

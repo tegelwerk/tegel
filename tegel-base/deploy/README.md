@@ -29,6 +29,9 @@ cp edge.env.example edge.env
 - `TEGEL_RECORDS` is the directory the ingest flow walks, mounted read-only at `/records`.
 - `TEGEL_OUTPUT` holds the production catalog, staging catalogs, the ingest error log, and the credentials file. Keep it outside the git checkout.
 - `TEGEL_ON_ERROR` is `skip` (log a bad record and continue) or `fail` (stop the run at the first bad record).
+- `TEGEL_UPSTREAMS` is optional: the host path of an upstreams YAML that lists the other Tiled servers data parts may point at (see "Remote parts" in [`dataserver.md`](../../tegel-core/specs/dataserver.md)). Its directory is mounted read-only at `/upstreams` in the data server and the ETL worker. Put the secret each upstream names (`api_key_env`, `client_secret_env`) in `edge.env`, never in the YAML. Leave it empty for no upstreams.
+
+The data server and the ETL worker both set `TEGEL_READABLE_STORAGE=/records`. Tiled reads registered array and table parts only from there, and staging rejects a part outside it.
 
 The data server, the pipeline workers, and the one-shot setup services use the image `tegel-dataserver:local`, built from `xfm_ssrl_tegel/Containerfile` in the directory that contains this repository.
 
@@ -41,7 +44,7 @@ The data server, the pipeline workers, and the one-shot setup services use the i
 | `keycloak` | Keycloak 26.4 with its data in the `keycloak_data` volume |
 | `realm-init` | `python -m tegel.actions.realm`, once |
 | `prefect` | Prefect 3 server with its data in the `prefect_data` volume |
-| `dataserver` | `python -m tegel.dataserver` after the issuer's discovery document answers; catalog `sqlite:////output/catalog.db` |
+| `dataserver` | `python -m tegel.dataserver` after the issuer's discovery document answers; catalog `sqlite:////output/catalog.db`; serves data parts from `/records` and proxies remote parts |
 | `catalog-updater` | `python -m tegel.actions.update` |
 | `etl` | `python -m tegel.actions.ingest`, serving the ingest deployment |
 | `ingest` | one ingest run over `/records` |

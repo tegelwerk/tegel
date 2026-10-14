@@ -50,24 +50,31 @@ class TiledCatalogIndex:
             if resource_id not in self._warned:
                 self._warned.add(resource_id)
                 _log.warning(
-                    "catalog row %s is not a Tegel 0.3 row and must be re-ingested (%s)",
+                    "catalog row %s is not a Tegel 0.4 row and must be re-ingested (%s)",
                     resource_id,
                     exc,
                 )
             return None
 
     def keys(self) -> list[str]:
+        """Children of the catalog root only; part nodes below a resource are not listed."""
         with sqlite3.connect(sqlite_path(self.catalog_uri)) as connection:
+            root = _root_id(connection)
+            if root is None:
+                return []
             rows = connection.execute(
-                "SELECT key FROM nodes WHERE id != 0 ORDER BY key"
+                "SELECT key FROM nodes WHERE parent = ? ORDER BY key", (root,)
             ).fetchall()
         return [row[0] for row in rows if isinstance(row[0], str) and row[0]]
 
     def _metadata(self, resource_id: str) -> dict[str, Any] | None:
         with sqlite3.connect(sqlite_path(self.catalog_uri)) as connection:
+            root = _root_id(connection)
+            if root is None:
+                return None
             row = connection.execute(
-                "SELECT metadata FROM nodes WHERE key = ? AND id != 0",
-                (resource_id,),
+                "SELECT metadata FROM nodes WHERE parent = ? AND key = ?",
+                (root, resource_id),
             ).fetchone()
         if row is None:
             return None
@@ -77,3 +84,8 @@ class TiledCatalogIndex:
         if not isinstance(payload, dict):
             return None
         return payload
+
+
+def _root_id(connection: sqlite3.Connection) -> int | None:
+    row = connection.execute("SELECT id FROM nodes WHERE parent IS NULL").fetchone()
+    return None if row is None else int(row[0])

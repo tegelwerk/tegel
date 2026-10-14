@@ -16,7 +16,7 @@ dependencies = [
     "uvicorn",
     "pyyaml",
     "pyjwt[crypto]",
-    "tiled[server]>=0.2.15",
+    "tiled[server,formats]>=0.2.18",
 ]
 
 [project.entry-points."tegel.auth"]

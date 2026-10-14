@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from tegel.core.upstreams import load_upstreams
 from tegel.dataserver.auth.adapter import install_bearer_check, reset_provider, use_provider
 from tegel.dataserver.catalog import open_catalog
 from tegel.dataserver.config import ServerConfig
+from tegel.dataserver.proxy import UpstreamClients
 from tegel.dataserver.registry import (
     build_auth,
     build_index,
     build_storage,
     load_registry,
-    reader_for,
-    readers_in_order,
     schema_mismatch,
 )
 from tegel.dataserver.routes import mount_routes
@@ -25,18 +25,19 @@ def create_app(config: ServerConfig) -> FastAPI:
 
     The returned application is Tiled's server, including the entity/link graph
     when the catalog is catalog-backed, with the read API mounted on it.
-    Anonymous access is off. The process does not run ETL.
+    Anonymous access is off. The process does not run ETL and does not call
+    readers: data parts were described at staging.
     """
     profile, _schema = load_spec(config.profile_path, config.schema_root)
     registry = load_registry()
     mismatch = schema_mismatch(registry, profile)
     if mismatch is not None:
         raise RuntimeError(mismatch)
-    tree = open_catalog(config.catalog_uri)
+    tree = open_catalog(config.catalog_uri, config.readable_storage)
     auth = build_auth(registry, config)
     index = build_index(registry, config, profile)
     storage = build_storage(registry, config)
-    readers = readers_in_order(registry)
+    upstreams = load_upstreams(config.upstreams_path) if config.upstreams_path else {}
 
     from tiled.config import Authentication, AuthenticationProviderSpec
     from tiled.server.app import build_app
@@ -65,8 +66,7 @@ def create_app(config: ServerConfig) -> FastAPI:
     app.state.tegel_tiled_auth = tiled_auth.authenticators[auth.name]
     app.state.tegel_index = index
     app.state.tegel_storage = storage
-    app.state.tegel_readers = readers
-    app.state.tegel_reader_for = lambda resource: reader_for(readers, resource)
+    app.state.tegel_upstreams = UpstreamClients(upstreams, timeout=config.upstream_timeout)
     app.state.tegel_catalog = tree
     mount_routes(app)
     return app

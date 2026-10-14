@@ -14,7 +14,7 @@ dependencies = [
     "tegel-core",
     "httpx",
     "prefect>=3,<4",
-    "tiled>=0.2.15",
+    "tiled[server,formats]>=0.2.18",
 ]
 
 [tool.hatch.build.targets.wheel]

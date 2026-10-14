@@ -10,16 +10,29 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from tegel.actions.errorlog import ErrorLog
-from tegel.core.contracts.resources import resource_id_for
+from tegel.actions.register import (
+    PartError,
+    RemoteChecker,
+    plan_parts,
+    readable_roots,
+    write_resource,
+)
+from tegel.core.contracts.resources import Resource, resource_from_catalog, resource_id_for
 from tegel.core.contracts.types import SearchProfile
 from tegel.core.plugins import (
     PluginContractError,
     Registry,
     catalog_metadata,
+    describe_parts,
+    readers_in_order,
     schema_mismatch,
+    with_parts,
 )
 from tegel.core.spec import load_spec, record_slots, schema_root_from_env
+from tegel.core.upstreams import Upstream, load_upstreams, upstream_timeout
 
 LOGGER = logging.getLogger("tegel.staging")
 MODES = ("skip", "fail")
@@ -74,12 +87,19 @@ def write_staging(
     on_error: str = "skip",
     error_log: Path | None = None,
     run_id: str | None = None,
+    roots: list[Path] | None = None,
+    upstreams: dict[str, Upstream] | None = None,
+    upstream_client: httpx.Client | None = None,
 ) -> StagingResult:
     """Claim each path and write one ``{record, tegel}`` node into a new staging catalog.
 
     A bad record is logged. With ``on_error="skip"`` staging continues; with
     ``"fail"`` the staging catalog is deleted and ``StagingError`` is raised.
     A profile, schema, or resource-type problem always raises.
+
+    Parts are described once here and stored in the envelope. Tiled parts must
+    lie under ``roots``, which default to ``readable_roots()``. Remote parts must
+    name an upstream in ``upstreams``, which default to ``TEGEL_UPSTREAMS``.
     """
     if on_error not in MODES:
         raise ValueError(f"on_error must be skip or fail: got {on_error!r}")
@@ -89,8 +109,14 @@ def write_staging(
     problem = schema_mismatch(types, profile)
     if problem is not None:
         raise RuntimeError(problem)
+    readers = readers_in_order(registry)
+    roots = readable_roots() if roots is None else roots
+    upstreams = load_upstreams() if upstreams is None else upstreams
+    owned = upstream_client is None
+    http = upstream_client or httpx.Client(timeout=upstream_timeout(), follow_redirects=False)
+    check_remote = RemoteChecker(upstreams, http)
     log = ErrorLog(error_log, run_id=run_id or uuid.uuid4().hex, mode=on_error)
-    tree = _open(staging)
+    tree = _open(staging, roots)
     result = StagingResult()
     seen: set[str] = set()
 
@@ -136,6 +162,19 @@ def write_staging(
                 bad("check", raw, exc, plugin.plugin_id)
                 continue
             try:
+                resource = _provisional_resource(stored, package.record, profile, raw)
+                descriptor = describe_parts(readers, resource)
+                plan = plan_parts(
+                    descriptor,
+                    payload_uri=resource.payload_uri,
+                    roots=roots,
+                    check_remote=check_remote,
+                )
+                stored = with_parts(stored, plan.parts, plan.payload)
+            except (PluginContractError, ValueError) as exc:
+                bad("parts", raw, exc, plugin.plugin_id)
+                continue
+            try:
                 key = resource_id_for(package.record, profile)
             except ValueError as exc:
                 bad("id", raw, exc, plugin.plugin_id)
@@ -145,7 +184,10 @@ def write_staging(
                 bad("duplicate", raw, duplicate, plugin.plugin_id, key)
                 continue
             try:
-                _write_node(tree, key=key, metadata=stored)
+                write_resource(tree, key=key, metadata=stored, plan=plan)
+            except PartError as exc:
+                bad("parts", raw, exc, plugin.plugin_id, key)
+                continue
             except Exception as exc:
                 bad("write", raw, exc, plugin.plugin_id, key)
                 continue
@@ -159,11 +201,24 @@ def write_staging(
     except BaseException:
         _discard(tree, staging)
         raise
+    finally:
+        if owned:
+            http.close()
     _close(tree)
     return result
 
 
-def _open(path: Path) -> Any:
+def _provisional_resource(
+    stored: dict[str, Any], record: dict[str, Any], profile: SearchProfile, raw: str
+) -> Resource:
+    value = record.get(profile.entity.identifier)
+    provisional = str(value) if value not in (None, "") else Path(raw).stem
+    return resource_from_catalog(
+        provisional, f"urn:tegel:staging/{provisional}", stored, profile=profile
+    )
+
+
+def _open(path: Path, roots: list[Path]) -> Any:
     path.parent.mkdir(parents=True, exist_ok=True)
     for suffix in ("", "-wal", "-shm"):
         candidate = Path(f"{path}{suffix}")
@@ -171,7 +226,9 @@ def _open(path: Path) -> Any:
     from tiled.catalog import from_uri
 
     uri = f"sqlite:///{path.resolve()}"
-    tree = from_uri(uri, init_if_not_exists=True)
+    tree = from_uri(
+        uri, init_if_not_exists=True, readable_storage=[str(root) for root in roots]
+    )
     if not hasattr(tree.context, "streaming_cache"):
         tree.context.streaming_cache = None
     return tree
@@ -192,22 +249,6 @@ def _close(tree: Any) -> None:
 def _discard(tree: Any, path: Path) -> None:
     _close(tree)
     remove_staging(path)
-
-
-def _write_node(tree: Any, *, key: str, metadata: dict[str, Any]) -> None:
-    from tiled.structures.core import StructureFamily
-
-    if not hasattr(tree.context, "streaming_cache"):
-        tree.context.streaming_cache = None
-
-    async def _write() -> None:
-        await tree.create_node(
-            structure_family=StructureFamily.bytes,
-            metadata=metadata,
-            key=key,
-        )
-
-    asyncio.run(_write())
 
 
 def _hidden(path: Path) -> bool:

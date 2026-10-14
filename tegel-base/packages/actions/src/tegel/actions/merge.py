@@ -1,8 +1,13 @@
 """Merge a staging catalog into the production catalog.
 
 The catalog updater is the only writer of the production file. Closure and
-full-text rows are left to the triggers on ``nodes``. ``alembic_version`` is
-not copied.
+full-text rows for inserted nodes are left to the triggers on ``nodes``.
+``alembic_version`` is not copied.
+
+When a staging node replaces a production node, production children that
+staging does not have are deleted with their data sources, revisions and
+closure rows. Assets and structures that no remaining data source uses go too.
+Everything happens in one transaction.
 """
 
 from __future__ import annotations
@@ -10,6 +15,7 @@ from __future__ import annotations
 import os
 import shutil
 import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _SKIP = {"alembic_version", "nodes_closure", "metadata_fts5"}
@@ -47,6 +53,14 @@ def merge_staging(staging_path: str, production_path: str) -> str:
     return production_path
 
 
+@dataclass
+class _Released:
+    """Asset and structure ids whose data sources were deleted during the merge."""
+
+    assets: set[int] = field(default_factory=set)
+    structures: set[str] = field(default_factory=set)
+
+
 def _merge(connection: sqlite3.Connection) -> None:
     _require(connection, "staging_db", "nodes")
     _require(connection, "main", "nodes")
@@ -59,10 +73,17 @@ def _merge(connection: sqlite3.Connection) -> None:
     if staging_root is None or production_root is None:
         raise RuntimeError("catalog is missing its root node")
     id_map = {int(staging_root["id"]): int(production_root["id"])}
-    _walk(connection, int(staging_root["id"]), id_map)
+    released = _Released()
+    _walk(connection, int(staging_root["id"]), id_map, released)
+    _drop_unused(connection, released)
 
 
-def _walk(connection: sqlite3.Connection, staging_parent: int, id_map: dict[int, int]) -> None:
+def _walk(
+    connection: sqlite3.Connection,
+    staging_parent: int,
+    id_map: dict[int, int],
+    released: _Released,
+) -> None:
     rows = connection.execute(
         "SELECT * FROM staging_db.nodes WHERE parent = ? ORDER BY id",
         (staging_parent,),
@@ -80,10 +101,81 @@ def _walk(connection: sqlite3.Connection, staging_parent: int, id_map: dict[int,
         else:
             production_id = int(existing["id"])
             _update_node(connection, row, production_id)
-            _delete_sources(connection, production_id)
+            _delete_sources(connection, production_id, released)
+            _drop_stale_children(connection, staging_id, production_id, released)
         id_map[staging_id] = production_id
         _copy_payload(connection, staging_id, production_id)
-        _walk(connection, staging_id, id_map)
+        _walk(connection, staging_id, id_map, released)
+
+
+def _drop_stale_children(
+    connection: sqlite3.Connection,
+    staging_id: int,
+    production_id: int,
+    released: _Released,
+) -> None:
+    kept = {
+        row["key"]
+        for row in connection.execute(
+            "SELECT key FROM staging_db.nodes WHERE parent = ?", (staging_id,)
+        )
+    }
+    stale = [
+        int(row["id"])
+        for row in connection.execute(
+            "SELECT id, key FROM main.nodes WHERE parent = ? ORDER BY id", (production_id,)
+        )
+        if row["key"] not in kept
+    ]
+    for node_id in stale:
+        _delete_subtree(connection, node_id, released)
+
+
+def _delete_subtree(connection: sqlite3.Connection, node_id: int, released: _Released) -> None:
+    rows = connection.execute(
+        """
+        WITH RECURSIVE subtree(id, depth) AS (
+            SELECT ?, 0
+            UNION ALL
+            SELECT nodes.id, subtree.depth + 1 FROM main.nodes
+            JOIN subtree ON nodes.parent = subtree.id
+        )
+        SELECT id FROM subtree ORDER BY depth DESC, id
+        """,
+        (node_id,),
+    ).fetchall()
+    for (found,) in rows:
+        _delete_sources(connection, int(found), released)
+        if _has(connection, "main", "revisions"):
+            connection.execute("DELETE FROM main.revisions WHERE node_id = ?", (found,))
+        connection.execute(
+            "DELETE FROM main.nodes_closure WHERE ancestor = ? OR descendant = ?",
+            (found, found),
+        )
+        connection.execute("DELETE FROM main.nodes WHERE id = ?", (found,))
+
+
+def _drop_unused(connection: sqlite3.Connection, released: _Released) -> None:
+    if released.assets and _has(connection, "main", "assets"):
+        for asset_id in sorted(released.assets):
+            connection.execute(
+                """
+                DELETE FROM main.assets WHERE id = ? AND NOT EXISTS (
+                    SELECT 1 FROM main.data_source_asset_association WHERE asset_id = ?
+                )
+                """,
+                (asset_id, asset_id),
+            )
+    if released.structures and _has(connection, "main", "structures"):
+        for structure_id in sorted(released.structures):
+            connection.execute(
+                """
+                DELETE FROM main.structures WHERE id = ? AND NOT EXISTS (
+                    SELECT 1 FROM main.data_sources WHERE structure_id = ?
+                )
+                """,
+                (structure_id, structure_id),
+            )
 
 
 def _insert_node(connection: sqlite3.Connection, row: sqlite3.Row, parent_id: int) -> int:
@@ -118,10 +210,25 @@ def _update_node(connection: sqlite3.Connection, row: sqlite3.Row, production_id
     )
 
 
-def _delete_sources(connection: sqlite3.Connection, node_id: int) -> None:
+def _delete_sources(connection: sqlite3.Connection, node_id: int, released: _Released) -> None:
     if not _has(connection, "main", "data_sources"):
         return
+    for source in connection.execute(
+        "SELECT structure_id FROM main.data_sources WHERE node_id = ?", (node_id,)
+    ):
+        if source["structure_id"] is not None:
+            released.structures.add(str(source["structure_id"]))
     if _has(connection, "main", "data_source_asset_association"):
+        released.assets.update(
+            int(row["asset_id"])
+            for row in connection.execute(
+                """
+                SELECT asset_id FROM main.data_source_asset_association
+                WHERE data_source_id IN (SELECT id FROM main.data_sources WHERE node_id = ?)
+                """,
+                (node_id,),
+            )
+        )
         connection.execute(
             """
             DELETE FROM main.data_source_asset_association

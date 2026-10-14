@@ -1,5 +1,9 @@
 """Read API mounted on the Tiled application.
 
+``/data`` returns the parts staging stored, with content URLs filled in per
+request. Tegel serves byte parts and the payload with HTTP Range; Tiled serves
+array and table parts on its own routes; ``proxy`` parts stream from upstream.
+
 ``POST /refresh-catalog`` reopens the catalog after an external merge. It does
 not write a record, and no route calls ``insert_record``.
 """
@@ -7,23 +11,37 @@ not write a record, and no route calls ``insert_record``.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+from typing import BinaryIO
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 
 from tegel.core.contracts.capabilities import Capabilities
 from tegel.core.contracts.resources import (
-    StructureFamily,
+    DataPart,
     build_search_crate,
     hit_from_metadata,
     metadata_matches,
     resource_uri,
     unknown_filters,
 )
-from tegel.core.plugins import PluginContractError
 from tegel.core.version import SPEC_VERSION
 from tegel.dataserver.auth.keycloak import AuthenticationError
+from tegel.dataserver.parts import RangeNotSatisfiable, descriptor_for, parse_range
+from tegel.dataserver.proxy import proxy_part
 from tegel.dataserver.version import __version__
+
+CHUNK = 1 << 16
+_NO_URLS = {"parts": {"__all__": {"content_url"}}, "payload": {"content_url"}}
+
+
+def _chunks(handle: BinaryIO) -> Iterator[bytes]:
+    try:
+        while block := handle.read(CHUNK):
+            yield block
+    finally:
+        handle.close()
 
 
 def mount_routes(app: FastAPI) -> None:
@@ -101,7 +119,7 @@ def mount_routes(app: FastAPI) -> None:
     @app.get("/resources/{resource_id}")
     def get_resource(resource_id: str, request: Request) -> dict:
         principal(request)
-        return resource_or_404(resource_id).model_dump()
+        return resource_or_404(resource_id).model_dump(exclude=_NO_URLS)
 
     @app.get("/resources/{resource_id}/metadata")
     def get_metadata(resource_id: str, request: Request) -> dict:
@@ -112,33 +130,67 @@ def mount_routes(app: FastAPI) -> None:
     def get_data(resource_id: str, request: Request) -> dict:
         principal(request)
         found = resource_or_404(resource_id)
-        try:
-            reader = app.state.tegel_reader_for(found)
-            descriptor = reader.describe(found)
-        except PluginContractError as exc:
-            raise HTTPException(status_code=404, detail="No reader validated the resource") from exc
-        return descriptor.model_dump()
+        descriptor = descriptor_for(
+            found,
+            public_origin=app.state.tegel_config.public_origin,
+            upstreams=app.state.tegel_upstreams.upstreams,
+        )
+        return descriptor.model_dump(mode="json")
 
     @app.get("/resources/{resource_id}/data/content")
     def get_content(resource_id: str, request: Request) -> Response:
         principal(request)
         found = resource_or_404(resource_id)
+        if found.payload is None:
+            raise HTTPException(status_code=404, detail="Resource has no payload")
+        return serve_bytes(found.payload, request)
+
+    @app.get("/resources/{resource_id}/data/{part_name}/content")
+    def get_part_content(resource_id: str, part_name: str, request: Request) -> Response:
+        principal(request)
+        found = resource_or_404(resource_id)
+        part = next((item for item in found.parts if item.name == part_name), None)
+        if part is None:
+            raise HTTPException(status_code=404, detail="Part not found")
+        if part.served_by == "tiled":
+            raise HTTPException(status_code=404, detail="Part is served by Tiled; use content_url")
+        if part.served_by == "link":
+            raise HTTPException(
+                status_code=404, detail="Part is served by its upstream; use content_url"
+            )
+        if part.served_by == "proxy":
+            return proxy_part(part, request, app.state.tegel_upstreams)
+        return serve_bytes(part, request)
+
+    def serve_bytes(part: DataPart, request: Request) -> Response:
+        storage = app.state.tegel_storage
         try:
-            reader = app.state.tegel_reader_for(found)
-            descriptor = reader.describe(found)
-        except PluginContractError as exc:
-            raise HTTPException(status_code=404, detail="No reader validated the resource") from exc
-        if descriptor.family is not StructureFamily.bytes:
-            raise HTTPException(status_code=404, detail="Content is only available for bytes")
-        uri = found.payload_uri
-        if not uri:
-            raise HTTPException(status_code=404, detail="Resource not found")
-        handle = app.state.tegel_storage.open_bytes(uri)
+            size = storage.size(part.asset_uri)
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail="Part content not found") from exc
         try:
-            payload = handle.read()
-        finally:
-            handle.close()
-        return Response(content=payload, media_type=descriptor.media_type)
+            wanted = parse_range(request.headers.get("range"), size)
+        except RangeNotSatisfiable:
+            return Response(
+                status_code=416,
+                headers={"Content-Range": f"bytes */{size}", "Accept-Ranges": "bytes"},
+            )
+        if wanted is None:
+            return StreamingResponse(
+                _chunks(storage.open_bytes(part.asset_uri)),
+                media_type=part.media_type,
+                headers={"Content-Length": str(size), "Accept-Ranges": "bytes"},
+            )
+        body = storage.open_range(part.asset_uri, wanted.start, wanted.end)
+        return Response(
+            content=body,
+            status_code=206,
+            media_type=part.media_type,
+            headers={
+                "Content-Range": f"bytes {wanted.start}-{wanted.end}/{size}",
+                "Accept-Ranges": "bytes",
+            },
+        )
 
     @app.post("/refresh-catalog")
     async def refresh_catalog(request: Request) -> dict[str, bool]:

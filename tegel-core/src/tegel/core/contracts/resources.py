@@ -1,10 +1,13 @@
 """Resources, search filters, and the reference RO-Crate search document."""
 
-from enum import StrEnum
-from typing import Any
-from urllib.parse import quote
+from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
+import re
+from enum import StrEnum
+from typing import Any, Literal
+from urllib.parse import quote, urlsplit
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from tegel.core.contracts.provenance import Provenance
 from tegel.core.contracts.types import SearchProfile
@@ -30,6 +33,66 @@ class Relation(BaseModel):
 
     rel: str = Field(min_length=1)
     target: str = Field(min_length=1)
+
+
+PART_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+ServedBy = Literal["tiled", "tegel", "link", "proxy"]
+RemoteMode = Literal["link", "proxy"]
+
+
+class DataPart(BaseModel):
+    """One named piece of a resource's data.
+
+    The reader fills the description. Staging sets ``served_by`` (and, for a
+    remote part, ``upstream`` and ``remote_path``). The server sets
+    ``content_url`` on read; it is never stored.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    family: StructureFamily
+    media_type: str = Field(min_length=1)
+    asset_uri: str = Field(min_length=1)
+    dataset: str | None = Field(default=None, min_length=1)
+    remote: RemoteMode | None = None
+    designated: bool = False
+    title: str | None = None
+    shape: list[int] | None = None
+    chunks: list[list[int]] | None = None
+    data_type: str | None = None
+    columns: list[str] | None = None
+    size: int | None = Field(default=None, ge=0)
+    served_by: ServedBy | None = None
+    upstream: str | None = None
+    remote_path: str | None = None
+    content_url: str | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _name_is_a_segment(cls, value: str) -> str:
+        if not PART_NAME.fullmatch(value):
+            raise ValueError(
+                f"part name {value!r} must match {PART_NAME.pattern}"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _asset_and_remote_agree(self) -> DataPart:
+        scheme = urlsplit(self.asset_uri).scheme
+        if scheme == "file":
+            if self.remote is not None:
+                raise ValueError(f"part {self.name}: remote is only for http(s) assets")
+        elif scheme in ("http", "https"):
+            if self.remote is None:
+                raise ValueError(
+                    f"part {self.name}: an http(s) asset needs remote 'link' or 'proxy'"
+                )
+        else:
+            raise ValueError(
+                f"part {self.name}: asset_uri must be a file: URI or an http(s) Tiled URL"
+            )
+        return self
 
 
 class ResourceRef(BaseModel):
@@ -58,6 +121,8 @@ class Resource(BaseModel):
     relations: list[Relation] = Field(default_factory=list)
     provenance: Provenance | None = None
     payload_uri: str | None = None
+    parts: list[DataPart] = Field(default_factory=list)
+    payload: DataPart | None = None
 
 
 RECORD_KEY = "record"
@@ -78,15 +143,30 @@ class CatalogEnvelope(BaseModel):
     schema_id: str = Field(min_length=1)
     schema_version: str = Field(min_length=1)
     class_name: str = Field(alias="class")
+    parts: list[DataPart] = Field(default_factory=list)
+    payload: DataPart | None = None
+
+
+def stored_part(part: DataPart) -> dict[str, Any]:
+    """A part as stored in the envelope: unset fields and ``content_url`` left out."""
+    return part.model_dump(mode="json", exclude_none=True, exclude={"content_url"})
+
+
+def dump_envelope(envelope: CatalogEnvelope) -> dict[str, Any]:
+    """The JSON form of the ``tegel`` block written to the catalog."""
+    dumped = envelope.model_dump(mode="json", by_alias=True, exclude={"parts", "payload"})
+    dumped["parts"] = [stored_part(part) for part in envelope.parts]
+    dumped["payload"] = None if envelope.payload is None else stored_part(envelope.payload)
+    return dumped
 
 
 def split_catalog_metadata(stored: dict[str, Any]) -> tuple[dict[str, Any], CatalogEnvelope]:
     """Return the ``record`` and ``tegel`` blocks of a stored row."""
-    message = "catalog row is not a Tegel 0.3 row"
+    message = "catalog row is not a Tegel 0.4 row"
     if not isinstance(stored, dict) or set(stored) != {RECORD_KEY, ENVELOPE_KEY}:
         raise ValueError(message)
     record = stored[RECORD_KEY]
-    if not isinstance(record, dict):
+    if not isinstance(record, dict) or "parts" not in (stored[ENVELOPE_KEY] or {}):
         raise ValueError(message)
     try:
         envelope = CatalogEnvelope.model_validate(stored[ENVELOPE_KEY])
@@ -130,16 +210,27 @@ class SearchResult(BaseModel):
 
 
 class DataDescriptor(BaseModel):
-    """How to read a resource without implying the bytes are loaded."""
+    """A resource's data parts and its payload, without loading any bytes.
 
-    model_config = ConfigDict(extra="ignore")
+    A reader returns it once, at staging. The server returns it from
+    ``GET /resources/{id}/data`` with each part's ``content_url`` filled in.
+    """
 
-    family: StructureFamily
-    media_type: str = Field(min_length=1)
-    content_url: str | None = None
-    shape: list[int] | None = None
-    chunks: list[list[int]] | None = None
-    data_type: str | None = None
+    model_config = ConfigDict(extra="forbid")
+
+    parts: list[DataPart] = Field(default_factory=list)
+    payload: DataPart | None = None
+
+    @model_validator(mode="after")
+    def _parts_are_consistent(self) -> DataDescriptor:
+        names = [part.name for part in self.parts]
+        repeated = sorted({name for name in names if names.count(name) > 1})
+        if repeated:
+            raise ValueError(f"part names must be unique: {', '.join(repeated)}")
+        designated = [part.name for part in self.parts if part.designated]
+        if len(designated) > 1:
+            raise ValueError(f"at most one part may be designated: {', '.join(designated)}")
+        return self
 
 
 class ResourcePage(BaseModel):
@@ -218,6 +309,8 @@ def resource_from_catalog(
         relations=list(envelope.relations),
         provenance=Provenance(plugin_id=envelope.plugin_id, source_name=envelope.source_name),
         payload_uri=envelope.payload_uri,
+        parts=list(envelope.parts),
+        payload=envelope.payload,
     )
 
 

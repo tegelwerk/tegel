@@ -4299,7 +4299,7 @@ dependencies = [
     { name = "httpx" },
     { name = "prefect" },
     { name = "tegel-core" },
-    { name = "tiled" },
+    { name = "tiled", extra = ["formats", "server"] },
 ]
 
 [package.metadata]
@@ -4307,7 +4307,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "prefect", specifier = ">=3,<4" },
     { name = "tegel-core", editable = "../tegel-core" },
-    { name = "tiled", specifier = ">=0.2.15" },
+    { name = "tiled", extras = ["server", "formats"], specifier = ">=0.2.18" },
 ]
 
 [[package]]
@@ -4317,28 +4317,40 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "h5py" },
     { name = "httpx" },
     { name = "import-linter" },
+    { name = "pandas" },
+    { name = "pyarrow" },
     { name = "pytest" },
     { name = "ruff" },
     { name = "tegel-actions" },
     { name = "tegel-dash" },
     { name = "tegel-dataserver" },
     { name = "tegel-toy" },
+    { name = "tifffile", version = "2026.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "tifffile", version = "2026.9.20", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "zarr", version = "3.1.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "zarr", version = "3.4.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 
 [package.metadata]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "h5py" },
     { name = "httpx" },
     { name = "import-linter", specifier = ">=2" },
+    { name = "pandas" },
+    { name = "pyarrow" },
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.8" },
     { name = "tegel-actions", editable = "packages/actions" },
     { name = "tegel-dash", editable = "packages/dash" },
     { name = "tegel-dataserver", editable = "packages/dataserver" },
     { name = "tegel-toy", editable = "examples/toy" },
+    { name = "tifffile" },
+    { name = "zarr" },
 ]
 
 [[package]]
@@ -4384,7 +4396,7 @@ dependencies = [
     { name = "pyjwt", extra = ["crypto"] },
     { name = "pyyaml" },
     { name = "tegel-core" },
-    { name = "tiled", extra = ["server"] },
+    { name = "tiled", extra = ["formats", "server"] },
     { name = "uvicorn" },
 ]
 
@@ -4394,7 +4406,7 @@ requires-dist = [
     { name = "pyjwt", extras = ["crypto"] },
     { name = "pyyaml" },
     { name = "tegel-core", editable = "../tegel-core" },
-    { name = "tiled", extras = ["server"], specifier = ">=0.2.15" },
+    { name = "tiled", extras = ["server", "formats"], specifier = ">=0.2.18" },
     { name = "uvicorn" },
 ]
 
@@ -4499,6 +4511,15 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+formats = [
+    { name = "h5netcdf" },
+    { name = "h5py" },
+    { name = "hdf5plugin" },
+    { name = "openpyxl" },
+    { name = "pillow" },
+    { name = "tifffile", version = "2026.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "tifffile", version = "2026.9.20", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
 server = [
     { name = "adbc-driver-manager" },
     { name = "adbc-driver-postgresql" },

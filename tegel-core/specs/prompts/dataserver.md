@@ -20,13 +20,13 @@ If neither a real fixture nor a real skeleton is present, stop and ask. Do not s
 Read these, in this order, before you write code.
 
 1. [plugins.md](../plugins.md), section "What an incarnation provides".
-2. [dataserver.md](../dataserver.md), sections "Responsibilities" and "HTTP API".
+2. [dataserver.md](../dataserver.md), sections "Responsibilities", "HTTP API" and "Data parts".
 3. `tegel-base/examples/toy/pyproject.toml`
 4. `tegel-base/examples/schemas/toy/record.yaml`, the external schema the toy profile names
 5. `tegel-base/examples/toy/schema/profile.yaml`
 6. `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py`
 7. `tegel-base/examples/toy/tests/test_extractor.py`
-8. `tegel-base/tests/integration/test_read_api.py`, for the `create_app`, `insert_record`, and `assert_incarnation` sequence only.
+8. `tegel-base/tests/integration/test_read_api.py`, for the `create_app` and `assert_incarnation` sequence only. It stages rows with `tegel-actions`; an incarnation test writes its row with `catalog_metadata` and `insert_record` instead.
 
 ## Writable files
 
@@ -41,7 +41,7 @@ Write only these files in the incarnation package. Create no other files.
 
 `<modality>` is a short package name for this incarnation. Do not add `src/tegel/__init__.py`. `tegel` stays a namespace package.
 
-Runtime dependencies are `tegel-core` plus, at most, the format library the reader needs. A reader may depend on one format library (for example `h5py`) when `describe` must read header metadata. `describe` still does not read chunk bytes. The dev group adds `tegel-dataserver`, `pytest`, and `httpx` so the checks below can run. Use the hatch layout from the toy `pyproject.toml`: wheel sources map `src` to the package root, and the wheel includes only `src/tegel`.
+Runtime dependencies are `tegel-core` plus, at most, the format library the reader needs. A reader may depend on one format library (for example `h5py`) when `describe` must find parts in header metadata. `describe` still does not read chunk bytes or table rows. The dev group adds `tegel-dataserver`, `pytest`, and `httpx` so the checks below can run. Use the hatch layout from the toy `pyproject.toml`: wheel sources map `src` to the package root, and the wheel includes only `src/tegel`.
 
 ## Actions package
 
@@ -86,13 +86,25 @@ Return domain fields in `record`, the payload location in `payload_uri`, links i
 - Every metrics value is a float, and every metrics key is a non-empty string.
 - The catalog id is the caller's `options["key"]` when that value is a non-empty string. Otherwise it is `record[entity.identifier]`. There is no filename fallback.
 
-**Reader.** `validate(resource) -> bool` and `describe(resource) -> DataDescriptor`.
+**Reader.** `validate(resource) -> bool` and `describe(resource) -> DataDescriptor`. Staging calls `describe` once; the server never does.
 
 - `validate` is true only for `RECORD.name` (`resource.type`).
-- `describe` reads the payload at `resource.payload_uri`. `resource.metadata` is the record block.
-- For an array, `describe` returns `shape`, `chunks`, and `data_type` from header or store metadata. One format library may read that header.
-- `describe` does not open chunk files and does not load the array payload.
-- A payload that is not an array is `StructureFamily.bytes` with media type `application/octet-stream`.
+- `describe` returns parts: `DataDescriptor(parts=[DataPart(...), ...], payload=DataPart(...) or None)`. Find the parts from what the record already lists (a crate's `hasPart`, a store listing, a sidecar next to `resource.payload_uri`). `resource.metadata` is the record block.
+- Each part has a `name` (one path segment, unique), a `family`, a `media_type`, and a `file:` `asset_uri`. Mark at most one part `designated`: the one a person should look at first. `shape` and `columns` hints are optional; if you give them, they must match what Tiled computes.
+- `payload` gives the media type of `payload_uri`; staging builds the payload part. Return `None` to serve it as `application/octet-stream`.
+- Do not set `served_by` or `content_url`. Staging and the server set them.
+- Choose the media type from this table. Tiled serves the first rows, so clients slice arrays and select columns. Everything else is served by Tegel as bytes with HTTP Range.
+
+  | Data | `family` | `media_type` |
+  | --- | --- | --- |
+  | Zarr v3 array (directory) | `array` | `application/x-zarr` |
+  | HDF5 dataset (set `dataset` to its path) | `array` | `application/x-hdf5` |
+  | npy | `array` | `application/x-npy` |
+  | TIFF, JPEG | `array` | `image/tiff`, `image/jpeg` |
+  | CSV with a header row | `table` | `text/csv;header=present` |
+  | anything else (text, logs, MTZ, CBF, Parquet, …) | `bytes` | its real media type, or `application/octet-stream` |
+
+- A remote part points at an upstream Tiled node: `asset_uri` is `{origin}{api_prefix}/metadata/{path}` and `remote` is `link` or `proxy`. Use one only for an origin the human names, and tell the human that origin must be listed in the deployment's `TEGEL_UPSTREAMS` file.
 
 ## Stop
 
@@ -105,6 +117,8 @@ Stop, and do not edit further, when the next change would do any of the followin
 - Import this package by name from the base. The server loads installed entry points and the profile path it is configured with.
 - Make `validate` return a score. The first entry point whose `validate` returns true wins. Entry points are sorted by name. Later plugins are not called.
 - Read array chunk bytes inside `describe`.
+- Open array chunks or table rows in `describe`. Tiled's adapter computes the structure at staging.
+- Point a remote part at an origin the human did not name, or put an upstream credential in any file.
 - Invent a facility path layout, file format, or naming convention that is not in the supplied fixture.
 - Re-implement discovery or record building that the upstream producer already does.
 - Write, copy, or edit a LinkML schema, or need a field the supplied class lacks. Report the field for the schema owner.
@@ -116,7 +130,7 @@ Copy the shape of the toy package only. Do not copy another incarnation's files.
 
 Call `assert_incarnation` from `tegel.dataserver.testing` on this `dataserver/` package. Do not replace it with a private check. A passing `pytest` run of hand-written assertions is not a substitute.
 
-`assert_incarnation` checks the package layout, that the package contains no LinkML schema, runtime and dev dependencies, entry points, the profile and its external schema, that the resource type's `metadata_schema` equals the profile's `schema_id`, search-field ranges, the extractor on the positive fixture and the rejected input, the stored row `catalog_metadata` builds, `describe`, and the read API. Build the app with `create_app`, write one row built by `catalog_metadata` with `insert_record`, and pass that server to `assert_incarnation`. Follow the sequence in `tegel-base/tests/integration/test_read_api.py`.
+`assert_incarnation` checks the package layout, that the package contains no LinkML schema, runtime and dev dependencies, entry points, the profile and its external schema, that the resource type's `metadata_schema` equals the profile's `schema_id`, search-field ranges, the extractor on the positive fixture and the rejected input, the stored row `catalog_metadata` builds, that `describe` returns a valid descriptor whose array parts carry a shape hint, and the read API, including `/data`, a one-element slice of a Tiled array part and a one-byte range of a Tegel part when the resource has them. Build the app with `create_app`, write one row built by `catalog_metadata` with `insert_record`, and pass that server to `assert_incarnation`. Follow the `create_app` and `assert_incarnation` sequence in `tegel-base/tests/integration/test_read_api.py`.
 
 From the incarnation package, with `TEGEL_SCHEMA_ROOT` set to the directory the human named:
 

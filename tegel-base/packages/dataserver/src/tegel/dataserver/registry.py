@@ -3,12 +3,21 @@
 from __future__ import annotations
 
 from tegel.core.contracts.types import SearchProfile
-from tegel.core.plugins import PluginContractError, Registry, first_true
+from tegel.core.plugins import PluginContractError, Registry, readers_in_order
 from tegel.core.plugins import schema_mismatch as core_schema_mismatch
 from tegel.dataserver.auth.keycloak import KeycloakAuth
-from tegel.dataserver.base import AuthProvider, Reader, Storage
+from tegel.dataserver.base import AuthProvider, Storage
 from tegel.dataserver.config import ServerConfig
 from tegel.dataserver.index.tiled_catalog import TiledCatalogIndex
+
+__all__ = [
+    "build_auth",
+    "build_index",
+    "build_storage",
+    "load_registry",
+    "readers_in_order",
+    "schema_mismatch",
+]
 
 
 def load_registry() -> Registry:
@@ -19,28 +28,6 @@ def load_registry() -> Registry:
 def schema_mismatch(registry: Registry, profile: SearchProfile) -> str | None:
     """Return why the installed resource types do not serve the profile's schema."""
     return core_schema_mismatch(registry.resource_types(), profile)
-
-
-def readers_in_order(registry: Registry) -> list[Reader]:
-    """Instantiate readers in entry-point name order."""
-    loaded: list[Reader] = []
-    group = registry.groups["tegel.readers"]
-    for name in sorted(group):
-        value = group[name]
-        if not isinstance(value, type):
-            raise PluginContractError(f"tegel.readers:{name}: must be a class")
-        try:
-            loaded.append(value())
-        except Exception as exc:
-            raise PluginContractError(
-                f"tegel.readers:{name}: must construct with no arguments ({exc})"
-            ) from exc
-    return loaded
-
-
-def reader_for(readers: list[Reader], resource: object) -> Reader:
-    """First reader whose ``validate`` returns true."""
-    return first_true(readers, resource)
 
 
 def build_auth(registry: Registry, config: ServerConfig) -> AuthProvider:

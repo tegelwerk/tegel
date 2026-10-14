@@ -15,6 +15,7 @@ from tegel.actions.staging import StagingError, claim_paths, write_staging
 from tegel.core.contracts.types import ResourceType
 from tegel.core.plugins import Registry
 from tegel.toy.dataserver import ToyExtractor
+from tegel.toy.dataserver.fixtures import write_record
 
 PROFILE = Path(__file__).resolve().parents[3] / "examples" / "toy" / "schema" / "profile.yaml"
 SIDECAR = {
@@ -38,11 +39,8 @@ LOG_KEYS = {
 
 
 def _record(tmp_path: Path, sidecar: dict, name: str = "note") -> Path:
-    raw = tmp_path / "records" / f"{name}.npy"
-    raw.parent.mkdir(exist_ok=True)
-    raw.write_bytes(b"not-read")
-    raw.with_suffix(".json").write_text(json.dumps(sidecar), encoding="utf-8")
-    return raw
+    folder = tmp_path / "records" / name
+    return write_record(folder, sidecar, frames=False, stats=False, notes=False)
 
 
 def _three(tmp_path: Path) -> list[str]:
@@ -94,7 +92,7 @@ def test_staging_writes_two_blocks(tmp_path: Path, profile) -> None:
     assert stored["record"] == SIDECAR
     assert stored["tegel"] == {
         "plugin_id": "toy-record",
-        "source_name": "note.npy",
+        "source_name": "record.json",
         "resource_type": "toy.record",
         "resource_type_version": "1",
         "payload_uri": raw.resolve().as_uri(),
@@ -102,12 +100,22 @@ def test_staging_writes_two_blocks(tmp_path: Path, profile) -> None:
         "schema_id": "https://w3id.org/tegel/toy/record",
         "schema_version": "2",
         "class": "Record",
+        "parts": [],
+        "payload": {
+            "name": "payload",
+            "family": "bytes",
+            "media_type": "application/json",
+            "asset_uri": raw.resolve().as_uri(),
+            "designated": False,
+            "size": raw.stat().st_size,
+            "served_by": "tegel",
+        },
     }
 
 
 def test_claimed_record_is_merged_into_production(tmp_path: Path, profile) -> None:
     raw = _record(tmp_path, SIDECAR)
-    accepted = claim_paths(raw.parent)
+    accepted = claim_paths(raw.parent.parent)
     assert accepted == [str(raw)]
     staging = tmp_path / "staging.db"
     assert write_staging(accepted, staging).staged == 1
@@ -324,7 +332,7 @@ def test_flow_summary_mentions_log(tmp_path: Path, monkeypatch, capsys) -> None:
     assert ingest.ingest_directories.fn(records=str(tmp_path / "records")) == 2
     assert f"staged 2, skipped 1; errors in {log}" in capsys.readouterr().out
 
-    (tmp_path / "records" / "b.npy").unlink()
+    (tmp_path / "records" / "b" / "record.json").unlink()
     assert ingest.ingest_directories.fn(records=str(tmp_path / "records")) == 2
     out = capsys.readouterr().out
     assert "staged 2, skipped 0" in out

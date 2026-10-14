@@ -51,7 +51,7 @@ def test_flat_row_is_skipped_with_warning(
             assert client.get("/resources/old-row", headers=headers).status_code == 404
     warnings = [record for record in caplog.records if record.name == "tegel.index"]
     assert len(warnings) == 1
-    assert "old-row is not a Tegel 0.3 row and must be re-ingested" in warnings[0].getMessage()
+    assert "old-row is not a Tegel 0.4 row and must be re-ingested" in warnings[0].getMessage()
 
 
 def test_capabilities_reports_schema(tmp_path: Path) -> None:

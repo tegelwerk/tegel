@@ -18,7 +18,7 @@ from tegel.core.contracts.resources import (
     resource_uri,
 )
 from tegel.core.contracts.types import ResourceType, SearchProfile, class_slot_specs
-from tegel.core.plugins import PluginContractError, catalog_metadata
+from tegel.core.plugins import PluginContractError, catalog_metadata, describe_parts
 from tegel.core.spec import schema_root_from_env
 from tegel.dataserver.spec import load_spec, resolve_schema_path
 from tegel.dataserver.testing.conformance import assert_read_only_api
@@ -162,11 +162,15 @@ def assert_incarnation(
         stored,
         profile=profile,
     )
-    descriptor = reader.describe(resource)
-    if not isinstance(descriptor, DataDescriptor):
+    if not isinstance(reader.describe(resource), DataDescriptor):
         raise AssertionError("describe must return a DataDescriptor")
-    if descriptor.family is StructureFamily.array and not descriptor.shape:
-        raise AssertionError("an array descriptor must include shape")
+    try:
+        descriptor = describe_parts([reader], resource)
+    except PluginContractError as exc:
+        raise AssertionError(str(exc)) from exc
+    for part in descriptor.parts:
+        if part.family is StructureFamily.array and not part.shape:
+            raise AssertionError(f"array part {part.name} must include a shape hint")
     assert_read_only_api(
         base_url,
         token=token,

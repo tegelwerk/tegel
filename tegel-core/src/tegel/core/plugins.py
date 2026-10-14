@@ -22,8 +22,11 @@ from tegel.core.contracts.resources import (
     RECORD_KEY,
     CatalogEnvelope,
     DataDescriptor,
+    DataPart,
     Relation,
     Resource,
+    dump_envelope,
+    split_catalog_metadata,
 )
 from tegel.core.contracts.types import ResourceType, SearchProfile
 
@@ -93,7 +96,11 @@ class Reader(Protocol):
         """Return whether this reader handles the resource."""
 
     def describe(self, resource: Resource) -> DataDescriptor:
-        """Return a structure-family descriptor."""
+        """Return the resource's data parts and payload.
+
+        Staging calls this once. It reads headers and store metadata only,
+        never array chunks or table rows.
+        """
 
 
 class Previewer(Protocol):
@@ -111,6 +118,12 @@ class Storage(Protocol):
 
     def open_bytes(self, uri: str) -> Any:
         """Return a binary reader for ``uri``."""
+
+    def open_range(self, uri: str, start: int, end: int) -> bytes:
+        """Return bytes ``start`` through ``end`` inclusive of ``uri``."""
+
+    def size(self, uri: str) -> int:
+        """Return the size of ``uri`` in bytes."""
 
 
 class AuthProvider(Protocol):
@@ -248,10 +261,19 @@ def catalog_metadata(
         schema_version=profile.schema_version,
         class_name=profile.class_name,
     )
-    return {
-        RECORD_KEY: dict(checked.record),
-        ENVELOPE_KEY: envelope.model_dump(mode="json", by_alias=True),
-    }
+    return {RECORD_KEY: dict(checked.record), ENVELOPE_KEY: dump_envelope(envelope)}
+
+
+def with_parts(
+    stored: dict[str, Any],
+    parts: Sequence[DataPart],
+    payload: DataPart | None,
+) -> dict[str, Any]:
+    """Return ``stored`` with the envelope's ``parts`` and ``payload`` replaced."""
+    _, envelope = split_catalog_metadata(stored)
+    updated = envelope.model_copy(update={"parts": list(parts), "payload": payload})
+    checked = CatalogEnvelope.model_validate(dump_envelope(updated))
+    return {RECORD_KEY: dict(stored[RECORD_KEY]), ENVELOPE_KEY: dump_envelope(checked)}
 
 
 def schema_mismatch(
@@ -291,6 +313,45 @@ def first_true(plugins: Sequence[Any], argument: Any) -> Any:
         if check_decision(plugin, decision):
             return plugin
     raise PluginContractError("No plugin validated the input")
+
+
+def readers_in_order(registry: Registry) -> list[Reader]:
+    """Instantiate ``tegel.readers`` classes in entry-point name order."""
+    loaded: list[Reader] = []
+    group = registry.groups["tegel.readers"]
+    for name in sorted(group):
+        value = group[name]
+        if not isinstance(value, type):
+            raise PluginContractError(f"tegel.readers:{name}: must be a class")
+        try:
+            loaded.append(value())
+        except Exception as exc:
+            raise PluginContractError(
+                f"tegel.readers:{name}: must construct with no arguments ({exc})"
+            ) from exc
+    return loaded
+
+
+def describe_parts(readers: Sequence[Reader], resource: Resource) -> DataDescriptor:
+    """Select the first reader that validates ``resource`` and check its descriptor.
+
+    Any failure, including a reader that raises, is a ``PluginContractError``.
+    """
+    try:
+        reader = first_true(readers, resource)
+    except PluginContractError as exc:
+        raise PluginContractError(f"no reader validated resource type {resource.type}") from exc
+    name = type(reader).__name__
+    try:
+        described = reader.describe(resource)
+    except Exception as exc:
+        raise PluginContractError(f"{name}.describe failed: {exc}") from exc
+    try:
+        if isinstance(described, DataDescriptor):
+            return DataDescriptor.model_validate(described.model_dump())
+        return DataDescriptor.model_validate(described)
+    except ValueError as exc:
+        raise PluginContractError(f"{name}.describe returned an invalid descriptor: {exc}") from exc
 
 
 class _EntryPoint:

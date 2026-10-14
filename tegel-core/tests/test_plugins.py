@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from tegel.core.contracts.resources import DataDescriptor, DataPart, Resource
 from tegel.core.contracts.types import ResourceType, SearchProfile
 from tegel.core.plugins import (
     GROUPS,
@@ -14,7 +15,9 @@ from tegel.core.plugins import (
     Registry,
     catalog_metadata,
     check_package,
+    describe_parts,
     first_true,
+    with_parts,
 )
 
 SLOTS = frozenset({"uuid", "title"})
@@ -225,7 +228,37 @@ def test_catalog_metadata_has_two_blocks(tmp_path: Path) -> None:
         "schema_id": "https://example.com/sample",
         "schema_version": "1.10",
         "class": "Sample",
+        "parts": [],
+        "payload": None,
     }
+
+
+def test_with_parts_stores_parts_without_content_urls(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    plugin = JsonPlugin()
+    stored = catalog_metadata(
+        plugin,
+        plugin.process(str(source), {}),
+        source_path=source,
+        profile=PROFILE,
+        slots=SLOTS,
+        resource_types=TYPES,
+    )
+    part = DataPart.model_validate({**NOTES, "served_by": "tegel", "content_url": "https://x"})
+    updated = with_parts(stored, [part], part.model_copy(update={"name": "payload"}))
+    assert updated["record"] == stored["record"]
+    assert updated["tegel"]["parts"] == [
+        {
+            "name": "notes",
+            "family": "bytes",
+            "media_type": "text/plain",
+            "asset_uri": "file:///data/notes.txt",
+            "designated": False,
+            "served_by": "tegel",
+        }
+    ]
+    assert updated["tegel"]["payload"]["name"] == "payload"
+    assert "content_url" not in updated["tegel"]["payload"]
 
 
 def test_catalog_metadata_runs_the_package_check(tmp_path: Path) -> None:
@@ -240,3 +273,42 @@ def test_catalog_metadata_runs_the_package_check(tmp_path: Path) -> None:
             slots=SLOTS,
             resource_types=TYPES,
         )
+
+
+RESOURCE = Resource(id="r1", uri="urn:tegel:staging/r1", type="sample")
+NOTES = {
+    "name": "notes",
+    "family": "bytes",
+    "media_type": "text/plain",
+    "asset_uri": "file:///data/notes.txt",
+}
+
+
+class _Reader:
+    def __init__(self, accepts: bool, result: object) -> None:
+        self.accepts = accepts
+        self.result = result
+
+    def validate(self, resource: Resource) -> bool:
+        return self.accepts
+
+    def describe(self, resource: Resource) -> object:
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+def test_describe_parts_uses_the_first_true_reader() -> None:
+    chosen = _Reader(True, DataDescriptor.model_validate({"parts": [NOTES]}))
+    later = _Reader(True, RuntimeError("must not be called"))
+    found = describe_parts([_Reader(False, None), chosen, later], RESOURCE)
+    assert [part.name for part in found.parts] == ["notes"]
+
+
+def test_describe_parts_reports_reader_failures() -> None:
+    with pytest.raises(PluginContractError, match="no reader validated resource type sample"):
+        describe_parts([_Reader(False, None)], RESOURCE)
+    with pytest.raises(PluginContractError, match="describe failed: boom"):
+        describe_parts([_Reader(True, RuntimeError("boom"))], RESOURCE)
+    with pytest.raises(PluginContractError, match="invalid descriptor"):
+        describe_parts([_Reader(True, {"family": "bytes", "media_type": "x"})], RESOURCE)

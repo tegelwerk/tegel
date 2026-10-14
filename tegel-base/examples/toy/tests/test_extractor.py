@@ -1,77 +1,89 @@
-"""The toy extractor claims an npy file and keeps the sidecar fields as the record."""
+"""The toy extractor claims ``record.json``; the reader lists parts from headers only."""
 
-import json
-import math
-import struct
 from pathlib import Path
 
 from tegel.core.contracts.resources import StructureFamily, resource_from_catalog, resource_uri
 from tegel.core.plugins import catalog_metadata
 from tegel.core.spec import load_spec, record_slots
 from tegel.toy.dataserver import RECORD, ToyExtractor, ToyReader
+from tegel.toy.dataserver.fixtures import write_record
 
 EXAMPLES = Path(__file__).resolve().parents[2]
 PROFILE, SCHEMA = load_spec(EXAMPLES / "toy" / "schema" / "profile.yaml", EXAMPLES / "schemas")
 SLOTS = record_slots(PROFILE, SCHEMA)
+RECORD_FIELDS = {
+    "sample_name": "red-record",
+    "uuid": "rec-derived",
+    "recorded": "2026-01-02",
+    "channel": "red",
+    "calibrated": False,
+}
 
 
-def test_extractor_reads_the_sidecar_and_reader_stops_at_the_header(tmp_path: Path) -> None:
-    payload = tmp_path / "scan.npy"
-    _write_npy(payload, (4, 5))
-    sidecar = {
-        "sample_name": "red-record",
-        "uuid": "rec-derived",
-        "recorded": "2026-01-02",
-        "channel": "red",
-        "calibrated": False,
-        "relations": [{"rel": "derived-from", "target": "rec-raw"}],
-    }
-    payload.with_suffix(".json").write_text(json.dumps(sidecar), encoding="utf-8")
+def _resource(marker: Path):
     plugin = ToyExtractor()
-    assert plugin.validate(str(payload)) is True
-    assert plugin.validate(str(tmp_path / "notes.txt")) is False
-    package = plugin.process(str(payload), {})
-    assert "relations" not in package.record
-    assert package.record["channel"] == "red"
-    assert package.relations[0].target == "rec-raw"
+    package = plugin.process(str(marker), {})
     stored = catalog_metadata(
         plugin,
         package,
-        source_path=payload,
+        source_path=marker,
         profile=PROFILE,
         slots=SLOTS,
         resource_types={RECORD.name: RECORD},
     )
-    assert stored["tegel"]["plugin_id"] == "toy-record"
-    assert stored["tegel"]["source_name"] == "scan.npy"
-    resource = resource_from_catalog(
-        "rec-derived",
-        resource_uri("http://example.test", "rec-derived"),
-        stored,
-        profile=PROFILE,
+    uri = resource_uri("http://example.test", package.record["uuid"])
+    return package, stored, resource_from_catalog(
+        package.record["uuid"], uri, stored, profile=PROFILE
     )
+
+
+def test_extractor_reads_record_json(tmp_path: Path) -> None:
+    relations = [{"rel": "derived-from", "target": "rec-raw"}]
+    marker = write_record(tmp_path / "rec", {**RECORD_FIELDS, "relations": relations})
+    plugin = ToyExtractor()
+    assert plugin.validate(str(marker)) is True
+    assert plugin.validate(str(tmp_path / "rec" / "notes.txt")) is False
+    package, stored, _ = _resource(marker)
+    assert "relations" not in package.record
+    assert package.record["channel"] == "red"
+    assert package.relations[0].target == "rec-raw"
+    assert stored["tegel"]["plugin_id"] == "toy-record"
+    assert stored["tegel"]["source_name"] == "record.json"
+
+
+def test_reader_lists_three_parts_and_the_payload(tmp_path: Path) -> None:
+    marker = write_record(tmp_path / "rec", RECORD_FIELDS)
+    _, _, resource = _resource(marker)
     descriptor = ToyReader().describe(resource)
-    assert descriptor.family is StructureFamily.array
-    assert descriptor.shape == [4, 5]
-    assert descriptor.chunks == [[4, 5]]
-    assert descriptor.data_type == "<f8"
-    assert payload.stat().st_size > 80
+    assert [part.name for part in descriptor.parts] == ["frames", "stats", "notes"]
+    frames, stats, notes = descriptor.parts
+    assert frames.family is StructureFamily.array and frames.designated
+    assert frames.shape == [4, 3]
+    assert frames.chunks is None
+    assert stats.family is StructureFamily.table
+    assert stats.media_type == "text/csv;header=present"
+    assert notes.media_type == "text/plain"
+    assert descriptor.payload is not None
+    assert descriptor.payload.media_type == "application/json"
+    assert descriptor.payload.asset_uri == marker.resolve().as_uri()
 
 
-def test_uuid_defaults_to_the_file_stem(tmp_path: Path) -> None:
-    payload = tmp_path / "plain.npy"
-    _write_npy(payload, (1,))
-    package = ToyExtractor().process(str(payload), {})
+def test_reader_reads_only_zarr_json(tmp_path: Path) -> None:
+    marker = write_record(tmp_path / "rec", RECORD_FIELDS, stats=False, notes=False)
+    chunks = [
+        path
+        for path in (tmp_path / "rec" / "frames.zarr").rglob("*")
+        if path.is_file() and path.name != "zarr.json"
+    ]
+    assert chunks
+    for chunk in chunks:
+        chunk.write_bytes(b"not a chunk")
+    _, _, resource = _resource(marker)
+    [frames] = ToyReader().describe(resource).parts
+    assert frames.shape == [4, 3]
+
+
+def test_uuid_defaults_to_the_directory_name(tmp_path: Path) -> None:
+    marker = write_record(tmp_path / "plain", {}, frames=False, stats=False, notes=False)
+    package = ToyExtractor().process(str(marker), {})
     assert package.record == {"uuid": "plain"}
-
-
-def _write_npy(path: Path, shape: tuple[int, ...]) -> None:
-    raw = str({"descr": "<f8", "fortran_order": False, "shape": shape}).encode("ascii")
-    pad = (64 - ((10 + len(raw) + 1) % 64)) % 64
-    header = raw + b" " * pad + b"\n"
-    payload = b"\x00" * (8 * math.prod(shape))
-    with path.open("wb") as handle:
-        handle.write(b"\x93NUMPY\x01\x00")
-        handle.write(struct.pack("<H", len(header)))
-        handle.write(header)
-        handle.write(payload)

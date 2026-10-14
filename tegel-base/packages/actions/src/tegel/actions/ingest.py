@@ -15,6 +15,7 @@ from prefect.deployments import run_deployment
 
 from tegel.actions.errorlog import FILENAME as ERROR_LOG
 from tegel.actions.refresh import refresh_catalog
+from tegel.actions.register import readable_roots
 from tegel.actions.staging import (
     MODES,
     StagingError,
@@ -51,13 +52,14 @@ def ingest_directories(records: str = "", batch_size: int = 100, on_error: str =
     production = str(output / "catalog.db")
     error_log = output / ERROR_LOG
     run_id = _run_id()
+    roots = readable_roots() or [root.resolve()]
     total = 0
     skipped = 0
     try:
         for batch in _chunks(accepted, batch_size):
             staging = output / "staging" / f"{uuid.uuid4().hex}.db"
             result = write_staging(
-                batch, staging, on_error=mode, error_log=error_log, run_id=run_id
+                batch, staging, on_error=mode, error_log=error_log, run_id=run_id, roots=roots
             )
             skipped += result.skipped
             if result.staged == 0:

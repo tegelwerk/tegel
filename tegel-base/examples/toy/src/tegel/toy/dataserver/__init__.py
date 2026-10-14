@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import ast
 import json
-import struct
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from tegel.core.contracts.resources import DataDescriptor, Resource, StructureFamily
+from tegel.core.contracts.resources import DataDescriptor, DataPart, Resource, StructureFamily
 from tegel.core.contracts.types import ResourceType
 from tegel.core.plugins import Extractor, ProcessedDataPackage
 
@@ -18,29 +16,28 @@ RECORD = ResourceType(
     version="1",
     metadata_schema="https://w3id.org/tegel/toy/record",
 )
+MARKER = "record.json"
 
 
 class ToyExtractor(Extractor):
-    """Claim a ``.npy`` file and read the sidecar next to it."""
+    """Claim a record directory through its ``record.json`` marker file."""
 
     @property
     def plugin_id(self) -> str:
         return "toy-record"
 
     def validate(self, input_path: str) -> bool:
-        return input_path.endswith(".npy")
+        return Path(input_path).name == MARKER
 
     def process(self, input_path: str, options: dict[str, Any]) -> ProcessedDataPackage:
         path = Path(input_path)
-        sidecar = path.with_suffix(".json")
         record: dict[str, Any] = {}
-        if sidecar.is_file():
-            loaded = json.loads(sidecar.read_text(encoding="utf-8"))
-            if isinstance(loaded, dict):
-                record.update(loaded)
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            record.update(loaded)
         relations = record.pop("relations", None) or []
         if "uuid" not in record:
-            record["uuid"] = path.stem
+            record["uuid"] = path.parent.name
         return ProcessedDataPackage(
             payload_path=str(path),
             record=record,
@@ -52,9 +49,10 @@ class ToyExtractor(Extractor):
 
 
 class ToyReader:
-    """Describe a toy record from the ``.npy`` header or as stored bytes.
+    """List the parts present next to ``record.json``.
 
-    The header read stops before the array payload.
+    ``frames.zarr`` is an array, ``stats.csv`` a table and ``notes.txt`` text.
+    The array shape hint comes from ``zarr.json``; no chunk is opened.
     """
 
     @property
@@ -68,35 +66,48 @@ class ToyReader:
         uri = resource.payload_uri
         if not uri:
             raise ValueError("payload_uri is required")
-        path = Path(unquote(urlparse(uri).path))
-        if path.suffix == ".npy":
-            shape, data_type = _npy_header(path)
-            return DataDescriptor(
-                family=StructureFamily.array,
-                media_type="application/x-npy",
-                shape=shape,
-                chunks=[shape],
-                data_type=data_type,
+        folder = Path(unquote(urlparse(uri).path)).parent
+        parts: list[DataPart] = []
+        frames = folder / "frames.zarr"
+        if (frames / "zarr.json").is_file():
+            header = json.loads((frames / "zarr.json").read_text(encoding="utf-8"))
+            parts.append(
+                DataPart(
+                    name="frames",
+                    family=StructureFamily.array,
+                    media_type="application/x-zarr",
+                    asset_uri=frames.resolve().as_uri(),
+                    designated=True,
+                    title="Frames",
+                    shape=[int(size) for size in header["shape"]],
+                )
             )
-        return DataDescriptor(
+        stats = folder / "stats.csv"
+        if stats.is_file():
+            parts.append(
+                DataPart(
+                    name="stats",
+                    family=StructureFamily.table,
+                    media_type="text/csv;header=present",
+                    asset_uri=stats.resolve().as_uri(),
+                    title="Statistics",
+                )
+            )
+        notes = folder / "notes.txt"
+        if notes.is_file():
+            parts.append(
+                DataPart(
+                    name="notes",
+                    family=StructureFamily.bytes,
+                    media_type="text/plain",
+                    asset_uri=notes.resolve().as_uri(),
+                    title="Notes",
+                )
+            )
+        payload = DataPart(
+            name="payload",
             family=StructureFamily.bytes,
-            media_type="application/octet-stream",
-            content_url=f"{resource.uri}/data/content",
+            media_type="application/json",
+            asset_uri=uri,
         )
-
-
-def _npy_header(path: Path) -> tuple[list[int], str]:
-    with path.open("rb") as handle:
-        magic = handle.read(6)
-        if magic != b"\x93NUMPY":
-            raise ValueError("payload is not an npy file")
-        major = handle.read(1)
-        handle.read(1)
-        if major == b"\x01":
-            (length,) = struct.unpack("<H", handle.read(2))
-        else:
-            (length,) = struct.unpack("<I", handle.read(4))
-        header = handle.read(length)
-    parsed = ast.literal_eval(header.decode("latin1").strip())
-    shape = [int(item) for item in parsed["shape"]]
-    return shape, str(parsed["descr"])
+        return DataDescriptor(parts=parts, payload=payload)

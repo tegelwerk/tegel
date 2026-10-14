@@ -18,6 +18,7 @@ from tegel.core.contracts.provenance import Provenance  # noqa: E402
 from tegel.core.contracts.resources import (  # noqa: E402
     CatalogEnvelope,
     DataDescriptor,
+    DataPart,
     ErrorBody,
     Relation,
     Resource,
@@ -38,6 +39,7 @@ MODELS = (
     Provenance,
     CatalogEnvelope,
     DataDescriptor,
+    DataPart,
     ErrorBody,
     Relation,
     Resource,
@@ -124,28 +126,51 @@ def openapi_document(schemas: dict[str, dict]) -> dict:
                 }
             },
             "/resources/{id}/data": {
-                "get": _op("DataDescriptor", "Structure-family descriptor", resource_id=True)
+                "get": _op(
+                    "DataDescriptor",
+                    "Data parts and payload, each with its content_url",
+                    resource_id=True,
+                )
             },
             "/resources/{id}/data/content": {
-                "get": {
-                    "summary": "Stored bytes when the descriptor family is bytes",
-                    "parameters": [_id_param()],
-                    "responses": {
-                        "200": {
-                            "description": "Payload bytes",
-                            "content": {
-                                "application/octet-stream": {
-                                    "schema": {"type": "string", "format": "binary"}
-                                }
-                            },
-                        },
-                        "401": _error("Authentication required"),
-                        "404": _error("Resource not found"),
-                    },
-                }
+                "get": _bytes_op(
+                    "The payload, with HTTP Range",
+                    [_id_param()],
+                    "Resource not found, or Resource has no payload",
+                )
+            },
+            "/resources/{id}/data/{part}/content": {
+                "get": _bytes_op(
+                    "A part Tegel serves: stored bytes with HTTP Range, or a proxy part "
+                    "streamed from its upstream with Tiled's query parameters",
+                    [_id_param(), {**_id_param(), "name": "part"}],
+                    "Resource or part not found, or the part is served by Tiled or a link",
+                )
             },
         },
         "components": {"schemas": schemas},
+    }
+
+
+def _bytes_op(summary: str, parameters: list[dict], missing: str) -> dict:
+    binary = {"*/*": {"schema": {"type": "string", "format": "binary"}}}
+    range_header = {
+        "name": "Range",
+        "in": "header",
+        "required": False,
+        "schema": {"type": "string"},
+        "description": "One range: bytes=a-b, bytes=a- or bytes=-n",
+    }
+    return {
+        "summary": summary,
+        "parameters": [*parameters, range_header],
+        "responses": {
+            "200": {"description": "All bytes, in the part's media type", "content": binary},
+            "206": {"description": "The requested range, with Content-Range", "content": binary},
+            "401": _error("Authentication required"),
+            "404": _error(missing),
+            "416": {"description": "Range not satisfiable; Content-Range: bytes */size"},
+        },
     }
 
 

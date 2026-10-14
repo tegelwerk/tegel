@@ -7,6 +7,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from tegel.core.spec import readable_storage_from_env
+from tegel.core.upstreams import DEFAULT_TIMEOUT, UPSTREAMS_ENV, upstream_timeout
+
 
 class ServerConfig(BaseModel):
     """Configuration for one launch of the reference data server.
@@ -32,6 +35,9 @@ class ServerConfig(BaseModel):
     index_name: str = "tiled"
     storage_name: str = "filesystem"
     search_document: str = "ro-crate"
+    readable_storage: list[Path] = Field(default_factory=list)
+    upstreams_path: Path | None = None
+    upstream_timeout: float = Field(default=DEFAULT_TIMEOUT, gt=0)
 
     @classmethod
     def from_env(cls) -> ServerConfig:
@@ -44,6 +50,7 @@ class ServerConfig(BaseModel):
             return value
 
         port = os.environ.get("TEGEL_PORT", "").strip()
+        upstreams = os.environ.get(UPSTREAMS_ENV, "").strip()
         return cls(
             public_origin=required("TEGEL_PUBLIC_ORIGIN"),
             catalog_uri=required("TEGEL_CATALOG_URI"),
@@ -57,4 +64,7 @@ class ServerConfig(BaseModel):
             host=os.environ.get("TEGEL_HOST", "").strip() or "127.0.0.1",
             port=int(port) if port else 8000,
             auth_name=os.environ.get("TEGEL_AUTH", "").strip() or "keycloak",
+            readable_storage=readable_storage_from_env(),
+            upstreams_path=Path(upstreams) if upstreams else None,
+            upstream_timeout=upstream_timeout(),
         )

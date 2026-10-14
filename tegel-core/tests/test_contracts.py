@@ -8,6 +8,10 @@ from pydantic import ValidationError
 from tegel.core.contracts.capabilities import Capabilities
 from tegel.core.contracts.resources import (
     CatalogEnvelope,
+    DataDescriptor,
+    DataPart,
+    Resource,
+    StructureFamily,
     build_search_crate,
     hit_from_metadata,
     metadata_matches,
@@ -190,18 +194,22 @@ ENVELOPE = {
     "schema_id": "https://example.com/sample",
     "schema_version": "1",
     "class": "Sample",
+    "parts": [],
 }
 RECORD = {"uuid": "abc", "sample_name": "north", "kind": "even", "recorded": "2026-10-01"}
 
 
 def test_split_rejects_flat_row() -> None:
     flat = {**RECORD, "plugin_id": "example-v1", "source_name": "abc.json"}
-    with pytest.raises(ValueError, match="not a Tegel 0.3 row"):
+    with pytest.raises(ValueError, match="not a Tegel 0.4 row"):
         split_catalog_metadata(flat)
-    with pytest.raises(ValueError, match="not a Tegel 0.3 row"):
+    with pytest.raises(ValueError, match="not a Tegel 0.4 row"):
         split_catalog_metadata({"record": RECORD, "tegel": {"plugin_id": "x"}})
-    with pytest.raises(ValueError, match="not a Tegel 0.3 row"):
+    with pytest.raises(ValueError, match="not a Tegel 0.4 row"):
         split_catalog_metadata({"record": RECORD, "tegel": ENVELOPE, "extra": 1})
+    without_parts = {key: value for key, value in ENVELOPE.items() if key != "parts"}
+    with pytest.raises(ValueError, match="not a Tegel 0.4 row"):
+        split_catalog_metadata({"record": RECORD, "tegel": without_parts})
     record, envelope = split_catalog_metadata({"record": RECORD, "tegel": ENVELOPE})
     assert record == RECORD
     assert envelope.class_name == "Sample"
@@ -307,3 +315,89 @@ def test_namespace_has_no_parent_init() -> None:
     parent = Path(tegel.core.__file__).resolve().parents[1]
     assert parent.name == "tegel"
     assert not (parent / "__init__.py").exists()
+
+
+ZARR_PART = {
+    "name": "frames",
+    "family": "array",
+    "media_type": "application/x-zarr",
+    "asset_uri": "file:///data/frames.zarr",
+    "designated": True,
+    "shape": [4, 3],
+}
+TEXT_PART = {
+    "name": "notes",
+    "family": "bytes",
+    "media_type": "text/plain",
+    "asset_uri": "file:///data/notes.txt",
+}
+
+
+@pytest.mark.parametrize("name", ["frames", "a", "A1.b-c_d", "x" * 128])
+def test_part_name_accepted(name: str) -> None:
+    assert DataPart.model_validate({**TEXT_PART, "name": name}).name == name
+
+
+@pytest.mark.parametrize("name", ["", ".hidden", "-x", "a/b", "a b", "x" * 129])
+def test_part_name_rejected(name: str) -> None:
+    with pytest.raises(ValidationError, match="part name"):
+        DataPart.model_validate({**TEXT_PART, "name": name})
+
+
+def test_part_names_unique() -> None:
+    with pytest.raises(ValidationError, match="unique: notes"):
+        DataDescriptor.model_validate({"parts": [TEXT_PART, TEXT_PART]})
+
+
+def test_one_designated_part() -> None:
+    other = {**ZARR_PART, "name": "other"}
+    with pytest.raises(ValidationError, match="at most one part may be designated"):
+        DataDescriptor.model_validate({"parts": [ZARR_PART, other]})
+
+
+def test_non_file_asset_rejected() -> None:
+    with pytest.raises(ValidationError, match="file: URI or an http"):
+        DataPart.model_validate({**TEXT_PART, "asset_uri": "s3://bucket/notes.txt"})
+
+
+def test_remote_part_requires_remote_mode() -> None:
+    url = "https://beamline.example/api/v1/metadata/scan/42/frames"
+    with pytest.raises(ValidationError, match="needs remote"):
+        DataPart.model_validate({**ZARR_PART, "asset_uri": url})
+    with pytest.raises(ValidationError, match="remote is only for http"):
+        DataPart.model_validate({**ZARR_PART, "remote": "proxy"})
+    assert DataPart.model_validate({**ZARR_PART, "asset_uri": url, "remote": "link"}).remote == (
+        "link"
+    )
+
+
+def test_descriptor_round_trips_through_json() -> None:
+    descriptor = DataDescriptor.model_validate(
+        {"parts": [ZARR_PART, TEXT_PART], "payload": {**TEXT_PART, "name": "payload"}}
+    )
+    again = DataDescriptor.model_validate_json(descriptor.model_dump_json())
+    assert again == descriptor
+    assert again.parts[0].family is StructureFamily.array
+
+
+def test_old_descriptor_shape_rejected() -> None:
+    with pytest.raises(ValidationError):
+        DataDescriptor.model_validate({"family": "bytes", "media_type": "text/plain"})
+
+
+def test_envelope_with_parts_round_trips() -> None:
+    parts = [{**ZARR_PART, "served_by": "tiled"}, {**TEXT_PART, "served_by": "tegel"}]
+    payload = {**TEXT_PART, "name": "payload", "served_by": "tegel"}
+    stored = {"record": RECORD, "tegel": {**ENVELOPE, "parts": parts, "payload": payload}}
+    _, envelope = split_catalog_metadata(stored)
+    assert [part.served_by for part in envelope.parts] == ["tiled", "tegel"]
+    assert envelope.payload is not None and envelope.payload.name == "payload"
+    dumped = envelope.model_dump(mode="json", by_alias=True, exclude_none=True)
+    assert split_catalog_metadata({"record": RECORD, "tegel": dumped})[1] == envelope
+    resource = resource_from_catalog("abc", "https://d/resources/abc", stored)
+    assert [part.name for part in resource.parts] == ["frames", "notes"]
+
+
+def test_resource_parts_default_empty() -> None:
+    resource = Resource.model_validate({"id": "abc", "uri": "https://d/resources/abc"})
+    assert resource.parts == []

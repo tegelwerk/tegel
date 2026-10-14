@@ -30,17 +30,17 @@ A **compatible** change is any of:
 - advertising a new `search_document` value besides `ro-crate`
 - adding an entry-point group
 
-The current version is `0.3.2`. Incarnations declare the `SPEC_VERSION` they were written against. A server and a client are compatible when their major versions match. Before `1.0.0`, the minor version may break; the reference packages in this repository move together.
+The current version is `0.4.0`. Incarnations declare the `SPEC_VERSION` they were written against. A server and a client are compatible when their major versions match. Before `1.0.0`, the minor version may break; the reference packages in this repository move together.
 
-## Migrating from 0.2
+## Migrating from 0.3
 
-- Schemas drop Tegel's fields (`plugin_id`, `source_name`, `key`, `payload_uri`, `resource_type`, `resource_type_version`, `relations`). A class holds domain slots only.
-- Extractors return `ProcessedDataPackage(payload_path, record, resource_type, payload_uri, relations, metrics)`. `record` holds domain fields. Tegel writes `plugin_id`, `source_name`, and the version fields itself.
-- Readers read `Resource.payload_uri`, not `metadata["payload_uri"]`.
-- The catalog id is the caller's `options["key"]`, otherwise the record's value for the profile's `entity.identifier`.
-- `version` in the schema and `schema_version` in the profile are quoted YAML strings.
-- Every installed resource type's `metadata_schema` equals the profile's `schema_id`.
-- Catalogs written by 0.2 staging are not served. Re-run ingest after upgrading.
+- **Readers return parts.** `describe(resource)` returns `DataDescriptor(parts=[DataPart, ...], payload=DataPart | None)`. The top-level `family`, `media_type`, `content_url`, `shape`, `chunks` and `data_type` are gone. A reader that still returns them fails loudly at staging, at stage `parts`.
+- **The server stops calling readers.** `describe` runs once, at staging. The result is stored in the `tegel` block as `parts` and `payload`. Staging registers Tiled-readable parts as externally managed children of the resource node, which is now a `container`.
+- **Catalogs are re-ingested.** A 0.3 row has no `parts` key; the index skips it with a warning. Re-run ingest after upgrading.
+- **`/data` changes shape.** Clients read `parts[*].content_url` (and `payload.content_url`) instead of `family` and `content_url`. Array and table parts are sliced and selected on Tiled's routes; byte parts and the payload take HTTP Range. `DataClient.open_data` is replaced by `data`, `parts`, `read_array`, `read_table` and `read_bytes`.
+- **Readable storage.** Tiled only serves assets under `TEGEL_READABLE_STORAGE` (default `TEGEL_RECORDS`). Set it on both the ETL and the data-server processes.
+- **Storage plugins** add `open_range(uri, start, end)` and `size(uri)`.
+- **Remote parts** are new and optional: a part may point at a node on an upstream Tiled server listed in `TEGEL_UPSTREAMS`.
 
 ## Documents
 
@@ -54,6 +54,8 @@ The current version is `0.3.2`. Incarnations declare the `SPEC_VERSION` they wer
 
 ## Follow-ups
 
-- Arrays survive staging: `asset_uri`, and `content_url` for arrays.
+- Tiled adapters for the domain formats incarnations serve as byte parts today, so those parts can be sliced.
+- Parquet, Arrow and NetCDF registration once Tiled can register them from a URI.
+- Previews and thumbnails; previewers stay listed and uncalled.
 - Rename `schema/profile.yaml` to a profile path that does not say "schema".
-- The incarnations `xfm_ssrl_tegel` and `mx_nsls2_tegel` migrate to 0.3.
+- The incarnations `xfm_ssrl_tegel` and `mx_nsls2_tegel` migrate to 0.4: their readers return parts, and each lists its upstream origins, if any, in its deployment's `TEGEL_UPSTREAMS`.

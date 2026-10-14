@@ -12,7 +12,7 @@ The reference data server reads these entry points, the search profile, and the 
 | --- | --- | --- |
 | `tegel.resource_types` | a `ResourceType` | data server, ETL |
 | `tegel.extractors` | an extractor class | ETL application |
-| `tegel.readers` | a reader class | data server |
+| `tegel.readers` | a reader class | ETL application (staging) |
 | `tegel.previewers` | a previewer class | data server |
 | `tegel.storage` | a storage class | data server, ETL |
 | `tegel.auth` | an auth provider class | data server |
@@ -31,7 +31,7 @@ Each entry point loads a class, except `tegel.resource_types`, which loads a `Re
 | `payload_path` | `str` | a readable file |
 | `record` | `dict[str, Any]` | domain fields only; every key is a slot of the profile's class |
 | `resource_type` | `str` | a registered `ResourceType.name` |
-| `payload_uri` | `str \| None` | default `None`; the location `/data/content` and readers use |
+| `payload_uri` | `str \| None` | default `None`; the payload `/data/content` serves, and where readers start looking for parts |
 | `relations` | `list[Relation]` | `{rel, target}` objects, default `[]` |
 | `metrics` | `dict[str, float]` | non-empty string keys |
 
@@ -91,9 +91,67 @@ The base ingest flow (`tegel.actions.ingest`) walks `TEGEL_RECORDS` recursively 
 
 ## Readers, previewers, storage, auth, index
 
-A reader or previewer implements `validate(resource) -> bool` and either `describe(resource)` or `preview(resource)`, returning a `DataDescriptor`. The same first-true rule applies. `describe` returns chunk information for an array and does not load the array. The reference server calls readers. It lists previewers and does not call them.
+A reader implements `validate(resource) -> bool` and `describe(resource) -> DataDescriptor`. The same first-true rule applies. Staging calls `describe` once per record, through `tegel.core.plugins.describe_parts`; the data server never calls it.
 
-A storage plugin implements `open_bytes(uri)` for a URI the catalog already stored. It does not define a copy policy.
+`describe` returns `DataDescriptor(parts=[...], payload=...)`. Each `DataPart` names one file or directory by `file:` URI, its structure family and its media type. `describe` reads headers and store metadata only, never array chunks or table rows; Tiled's adapter computes the structure at staging. Hints (`shape`, `chunks`, `data_type`, `columns`) are optional and are checked against that structure. The reader does not set `served_by` or `content_url`. `payload` gives the media type of the resource's own `payload_uri`; staging builds the payload part from `payload_uri`. How a reader finds its parts is the incarnation's business: a crate's `hasPart`, a store listing, a sidecar. Tegel does not read crates.
+
+```python
+from pathlib import Path
+from urllib.parse import unquote, urlparse
+
+from tegel.core.contracts.resources import DataDescriptor, DataPart, StructureFamily
+
+
+class ExampleReader:
+    def validate(self, resource) -> bool:
+        return resource.type == "example.record"
+
+    def describe(self, resource) -> DataDescriptor:
+        folder = Path(unquote(urlparse(resource.payload_uri).path)).parent
+        return DataDescriptor(
+            parts=[
+                DataPart(
+                    name="image",
+                    family=StructureFamily.array,
+                    media_type="application/x-zarr",
+                    asset_uri=(folder / "image.zarr").as_uri(),
+                    designated=True,
+                ),
+                DataPart(
+                    name="log",
+                    family=StructureFamily.bytes,
+                    media_type="text/plain",
+                    asset_uri=(folder / "run.log").as_uri(),
+                ),
+            ],
+            payload=DataPart(
+                name="payload",
+                family=StructureFamily.bytes,
+                media_type="application/json",
+                asset_uri=resource.payload_uri,
+            ),
+        )
+```
+
+Tiled serves the Zarr part, so clients slice it; Tegel serves the log as bytes with HTTP Range. The format table is in [dataserver.md](dataserver.md#who-serves-a-part).
+
+A reader declares a remote part by giving its upstream Tiled node URL as `asset_uri` and choosing `remote`:
+
+```python
+DataPart(
+    name="frames",
+    family=StructureFamily.array,
+    media_type="application/x-tiled",
+    asset_uri="https://upstream.example/api/v1/metadata/scan/42/frames",
+    remote="proxy",
+)
+```
+
+The origin must be listed in the deployment's `TEGEL_UPSTREAMS` file, or staging rejects the record. With `link`, clients read the upstream directly with their own credentials; with `proxy`, Tegel streams it with Tegel's credentials for that upstream.
+
+A previewer implements `validate(resource) -> bool` and `preview(resource) -> DataDescriptor`. The reference server lists previewers and does not call them.
+
+A storage plugin implements `open_bytes(uri)`, `open_range(uri, start, end)` (both inclusive) and `size(uri)` for a URI the catalog already stored. It does not define a copy policy.
 
 An auth plugin has a `name` and implements `authenticate(authorization) -> Principal`. The reference registration is Keycloak. A site deployment can register a different provider and select it with `TEGEL_AUTH`. The server passes that one provider to Tiled through an adapter and does not also register Keycloak.
 
@@ -105,7 +163,7 @@ An index plugin implements read methods `get(resource_id)` and `keys()`. Writes 
 2. A profile YAML that names an external LinkML schema and class, and whose fields are slots of that class. The schema needs no Tegel fields; it is used as is.
 3. A `ResourceType` entry point whose `metadata_schema` is that schema id, with an optional `parent` for fallback. Its `version` is the incarnation's mapping version, independent of `schema_version`.
 4. An extractor entry point that passes the contract above.
-5. A reader entry point for the payload that extractor produces.
+5. A reader entry point that returns the parts and the payload media type for the records that extractor produces.
 6. Any storage, auth, or index replacement the deployment needs. The reference server already registers Keycloak.
 
 ## Worked example
@@ -114,9 +172,9 @@ An index plugin implements read methods `get(resource_id)` and `keys()`. Writes 
 
 - `tegel-base/examples/toy/pyproject.toml` registers `toy-record` on `tegel.resource_types`, `tegel.extractors`, and `tegel.readers`.
 - `tegel-base/examples/schemas/toy/record.yaml` is the LinkML schema, outside the toy package. It holds domain slots only; `recorded` comes from the mixin `Timestamped`. `tegel-base/examples/toy/schema/profile.yaml` names it and its `Record` class, searches on `channel` and the boolean `calibrated`, and uses `uuid` as the identifier.
-- `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py` is the resource type, the extractor, and the reader. The extractor claims `.npy` files and returns the JSON sidecar next to each one as the record, with its `relations` moved to the package's `relations`. The reader returns an array descriptor from the `.npy` header at `Resource.payload_uri` and does not read the array payload. A payload that is not `.npy` is described as `bytes`.
-- `tegel-base/examples/toy/tests/test_extractor.py` checks the extractor contract.
-- `tegel-base/tests/integration/test_read_api.py` builds the reference server with `create_app`, writes rows built by `catalog_metadata` with `insert_record`, and runs `assert_incarnation` on the toy package. It does not write through the HTTP API.
+- `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py` is the resource type, the extractor, and the reader. The extractor claims `record.json` and returns its fields as the record, with its `relations` moved to the package's `relations`. The reader lists the parts next to it: `frames.zarr` as the designated array `frames`, with its shape hint from `zarr.json`; `stats.csv` as the table `stats`; `notes.txt` as the text part `notes`. The payload is `record.json`, `application/json`.
+- `tegel-base/examples/toy/tests/test_extractor.py` checks the extractor and the reader.
+- `tegel-base/tests/integration/test_read_api.py` stages toy records with `write_staging`, merges them with `merge_staging`, builds the reference server with `create_app`, slices `frames`, reads a `stats` column and a byte range of `notes` and of the payload, and runs `assert_incarnation` on the toy package. It does not write through the HTTP API.
 
 Copy those three entry points, point the profile at the schema you were given, and keep modality vocabulary in the incarnation package. The reference process reads the installed entry points and the profile path you configure. It does not import the incarnation by name.
 

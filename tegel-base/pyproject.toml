@@ -28,6 +28,11 @@ dev = [
     "ruff>=0.8",
     "import-linter>=2",
     "httpx",
+    "h5py",
+    "pandas",
+    "pyarrow",
+    "tifffile",
+    "zarr",
 ]
 
 [tool.pytest.ini_options]

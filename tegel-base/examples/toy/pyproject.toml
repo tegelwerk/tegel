@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "tegel-toy"
 version = "0.1.0"
-description = "Reference incarnation: a synthetic array record and a JSON sidecar."
+description = "Reference incarnation: a record.json with array, table and text parts."
 readme = "README.md"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]

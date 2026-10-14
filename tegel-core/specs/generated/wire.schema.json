@@ -32,7 +32,7 @@
     "description": "What a server implements, returned by ``GET /capabilities``.",
     "properties": {
       "spec_version": {
-        "default": "0.3.2",
+        "default": "0.4.0",
         "title": "Spec Version",
         "type": "string"
       },
@@ -166,6 +166,210 @@
   },
   "CatalogEnvelope": {
     "$defs": {
+      "DataPart": {
+        "additionalProperties": false,
+        "description": "One named piece of a resource's data.\n\nThe reader fills the description. Staging sets ``served_by`` (and, for a\nremote part, ``upstream`` and ``remote_path``). The server sets\n``content_url`` on read; it is never stored.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/$defs/StructureFamily"
+          },
+          "media_type": {
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          },
+          "asset_uri": {
+            "minLength": 1,
+            "title": "Asset Uri",
+            "type": "string"
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dataset"
+          },
+          "remote": {
+            "anyOf": [
+              {
+                "enum": [
+                  "link",
+                  "proxy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Remote"
+          },
+          "designated": {
+            "default": false,
+            "title": "Designated",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shape"
+          },
+          "chunks": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Chunks"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data Type"
+          },
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Columns"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Size"
+          },
+          "served_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tiled",
+                  "tegel",
+                  "link",
+                  "proxy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Served By"
+          },
+          "upstream": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Upstream"
+          },
+          "remote_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Remote Path"
+          },
+          "content_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content Url"
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "media_type",
+          "asset_uri"
+        ],
+        "title": "DataPart",
+        "type": "object"
+      },
       "Relation": {
         "description": "A directed link stored by ETL and returned on read.",
         "properties": {
@@ -186,6 +390,18 @@
         ],
         "title": "Relation",
         "type": "object"
+      },
+      "StructureFamily": {
+        "description": "Tiled structure families a reader may return.",
+        "enum": [
+          "array",
+          "table",
+          "container",
+          "sparse",
+          "bytes"
+        ],
+        "title": "StructureFamily",
+        "type": "string"
       }
     },
     "additionalProperties": false,
@@ -243,6 +459,24 @@
       "class": {
         "title": "Class",
         "type": "string"
+      },
+      "parts": {
+        "items": {
+          "$ref": "#/$defs/DataPart"
+        },
+        "title": "Parts",
+        "type": "array"
+      },
+      "payload": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/DataPart"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
       }
     },
     "required": [
@@ -259,6 +493,210 @@
   },
   "DataDescriptor": {
     "$defs": {
+      "DataPart": {
+        "additionalProperties": false,
+        "description": "One named piece of a resource's data.\n\nThe reader fills the description. Staging sets ``served_by`` (and, for a\nremote part, ``upstream`` and ``remote_path``). The server sets\n``content_url`` on read; it is never stored.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/$defs/StructureFamily"
+          },
+          "media_type": {
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          },
+          "asset_uri": {
+            "minLength": 1,
+            "title": "Asset Uri",
+            "type": "string"
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dataset"
+          },
+          "remote": {
+            "anyOf": [
+              {
+                "enum": [
+                  "link",
+                  "proxy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Remote"
+          },
+          "designated": {
+            "default": false,
+            "title": "Designated",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shape"
+          },
+          "chunks": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Chunks"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data Type"
+          },
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Columns"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Size"
+          },
+          "served_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tiled",
+                  "tegel",
+                  "link",
+                  "proxy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Served By"
+          },
+          "upstream": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Upstream"
+          },
+          "remote_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Remote Path"
+          },
+          "content_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content Url"
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "media_type",
+          "asset_uri"
+        ],
+        "title": "DataPart",
+        "type": "object"
+      },
       "StructureFamily": {
         "description": "Tiled structure families a reader may return.",
         "enum": [
@@ -272,8 +710,53 @@
         "type": "string"
       }
     },
-    "description": "How to read a resource without implying the bytes are loaded.",
+    "additionalProperties": false,
+    "description": "A resource's data parts and its payload, without loading any bytes.\n\nA reader returns it once, at staging. The server returns it from\n``GET /resources/{id}/data`` with each part's ``content_url`` filled in.",
     "properties": {
+      "parts": {
+        "items": {
+          "$ref": "#/$defs/DataPart"
+        },
+        "title": "Parts",
+        "type": "array"
+      },
+      "payload": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/DataPart"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
+      }
+    },
+    "title": "DataDescriptor",
+    "type": "object"
+  },
+  "DataPart": {
+    "$defs": {
+      "StructureFamily": {
+        "description": "Tiled structure families a reader may return.",
+        "enum": [
+          "array",
+          "table",
+          "container",
+          "sparse",
+          "bytes"
+        ],
+        "title": "StructureFamily",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "description": "One named piece of a resource's data.\n\nThe reader fills the description. Staging sets ``served_by`` (and, for a\nremote part, ``upstream`` and ``remote_path``). The server sets\n``content_url`` on read; it is never stored.",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string"
+      },
       "family": {
         "$ref": "#/$defs/StructureFamily"
       },
@@ -282,7 +765,46 @@
         "title": "Media Type",
         "type": "string"
       },
-      "content_url": {
+      "asset_uri": {
+        "minLength": 1,
+        "title": "Asset Uri",
+        "type": "string"
+      },
+      "dataset": {
+        "anyOf": [
+          {
+            "minLength": 1,
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Dataset"
+      },
+      "remote": {
+        "anyOf": [
+          {
+            "enum": [
+              "link",
+              "proxy"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Remote"
+      },
+      "designated": {
+        "default": false,
+        "title": "Designated",
+        "type": "boolean"
+      },
+      "title": {
         "anyOf": [
           {
             "type": "string"
@@ -292,7 +814,7 @@
           }
         ],
         "default": null,
-        "title": "Content Url"
+        "title": "Title"
       },
       "shape": {
         "anyOf": [
@@ -338,13 +860,97 @@
         ],
         "default": null,
         "title": "Data Type"
+      },
+      "columns": {
+        "anyOf": [
+          {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Columns"
+      },
+      "size": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Size"
+      },
+      "served_by": {
+        "anyOf": [
+          {
+            "enum": [
+              "tiled",
+              "tegel",
+              "link",
+              "proxy"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Served By"
+      },
+      "upstream": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Upstream"
+      },
+      "remote_path": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Remote Path"
+      },
+      "content_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Content Url"
       }
     },
     "required": [
+      "name",
       "family",
-      "media_type"
+      "media_type",
+      "asset_uri"
     ],
-    "title": "DataDescriptor",
+    "title": "DataPart",
     "type": "object"
   },
   "ErrorBody": {
@@ -384,6 +990,210 @@
   },
   "Resource": {
     "$defs": {
+      "DataPart": {
+        "additionalProperties": false,
+        "description": "One named piece of a resource's data.\n\nThe reader fills the description. Staging sets ``served_by`` (and, for a\nremote part, ``upstream`` and ``remote_path``). The server sets\n``content_url`` on read; it is never stored.",
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/$defs/StructureFamily"
+          },
+          "media_type": {
+            "minLength": 1,
+            "title": "Media Type",
+            "type": "string"
+          },
+          "asset_uri": {
+            "minLength": 1,
+            "title": "Asset Uri",
+            "type": "string"
+          },
+          "dataset": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Dataset"
+          },
+          "remote": {
+            "anyOf": [
+              {
+                "enum": [
+                  "link",
+                  "proxy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Remote"
+          },
+          "designated": {
+            "default": false,
+            "title": "Designated",
+            "type": "boolean"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Title"
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Shape"
+          },
+          "chunks": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Chunks"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data Type"
+          },
+          "columns": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Columns"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Size"
+          },
+          "served_by": {
+            "anyOf": [
+              {
+                "enum": [
+                  "tiled",
+                  "tegel",
+                  "link",
+                  "proxy"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Served By"
+          },
+          "upstream": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Upstream"
+          },
+          "remote_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Remote Path"
+          },
+          "content_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Content Url"
+          }
+        },
+        "required": [
+          "name",
+          "family",
+          "media_type",
+          "asset_uri"
+        ],
+        "title": "DataPart",
+        "type": "object"
+      },
       "Provenance": {
         "description": "How a catalog entry was produced.",
         "properties": {
@@ -425,6 +1235,18 @@
         ],
         "title": "Relation",
         "type": "object"
+      },
+      "StructureFamily": {
+        "description": "Tiled structure families a reader may return.",
+        "enum": [
+          "array",
+          "table",
+          "container",
+          "sparse",
+          "bytes"
+        ],
+        "title": "StructureFamily",
+        "type": "string"
       }
     },
     "description": "One catalog record served by the data server.",
@@ -533,6 +1355,24 @@
         ],
         "default": null,
         "title": "Payload Uri"
+      },
+      "parts": {
+        "items": {
+          "$ref": "#/$defs/DataPart"
+        },
+        "title": "Parts",
+        "type": "array"
+      },
+      "payload": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/DataPart"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
       }
     },
     "required": [
