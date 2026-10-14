@@ -7,20 +7,10 @@ import os
 from pathlib import Path
 from typing import Any
 
-from tegel.core.plugins import PluginContractError, Registry, check_package
+from tegel.core.contracts.resources import resource_id_for
+from tegel.core.contracts.types import SearchProfile
+from tegel.core.plugins import PluginContractError, Registry, catalog_metadata
 from tegel.core.spec import load_spec, record_slots, schema_root_from_env
-
-
-def catalog_key(metadata: dict[str, Any]) -> str:
-    """Use an explicit key, then uuid. The value must be one path segment."""
-    for name in ("key", "uuid"):
-        value = metadata.get(name)
-        if isinstance(value, str) and value.strip():
-            key = value.strip()
-            if "/" in key or "\\" in key:
-                raise ValueError(f"catalog key must be one path segment: {key}")
-            return key
-    raise ValueError("catalog key is missing")
 
 
 def claim_paths(root: Path) -> list[str]:
@@ -38,22 +28,24 @@ def claim_paths(root: Path) -> list[str]:
     return accepted
 
 
-def profile_slots() -> frozenset[str]:
-    """Slots of the class named by ``TEGEL_PROFILE``, from ``TEGEL_SCHEMA_ROOT``."""
+def load_staging_spec() -> tuple[SearchProfile, frozenset[str]]:
+    """The profile at ``TEGEL_PROFILE`` and its class slots, from ``TEGEL_SCHEMA_ROOT``."""
     value = os.environ.get("TEGEL_PROFILE", "").strip()
     if not value:
         raise RuntimeError("TEGEL_PROFILE is required")
     profile, schema = load_spec(Path(value), schema_root_from_env())
-    return record_slots(profile, schema)
+    return profile, record_slots(profile, schema)
 
 
 def write_staging(paths: list[str], staging: Path) -> int:
-    """Claim each path and write one node into a new staging catalog.
+    """Claim each path and write one ``{record, tegel}`` node into a new staging catalog.
 
-    Metadata keys must be slots of the profile's class.
+    Record keys must be slots of the profile's class. The catalog id is the
+    record's ``entity.identifier`` value.
     """
-    slots = profile_slots()
+    profile, slots = load_staging_spec()
     registry = Registry()
+    types = registry.resource_types()
     tree = _open(staging)
     count = 0
     for raw in paths:
@@ -62,9 +54,17 @@ def write_staging(paths: list[str], staging: Path) -> int:
         except PluginContractError:
             print(f"skipped {raw}", flush=True)
             continue
-        package = check_package(plugin, plugin.process(raw, {}), slots=slots)
-        key = catalog_key(package.metadata)
-        _write_node(tree, key=key, metadata=package.metadata)
+        package = plugin.process(raw, {})
+        stored = catalog_metadata(
+            plugin,
+            package,
+            source_path=raw,
+            profile=profile,
+            slots=slots,
+            resource_types=types,
+        )
+        key = resource_id_for(package.record, profile)
+        _write_node(tree, key=key, metadata=stored)
         count += 1
         print(f"staged {key}", flush=True)
     return count

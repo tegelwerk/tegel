@@ -25,4 +25,4 @@ uv run ruff check packages examples tests
 uv run lint-imports
 ```
 
-The root `conftest.py` sets `TEGEL_SCHEMA_ROOT` to `examples/schemas` for every test. `tests/integration/test_read_api.py` builds the server with `create_app`, writes catalog rows with `insert_record` (no HTTP route calls it), and runs `assert_incarnation` on the toy package.
+The root `conftest.py` sets `TEGEL_SCHEMA_ROOT` to `examples/schemas` for every test. `tests/integration/test_read_api.py` builds the server with `create_app`, writes catalog rows built by `catalog_metadata` with `insert_record` (no HTTP route calls it), and runs `assert_incarnation` on the toy package.

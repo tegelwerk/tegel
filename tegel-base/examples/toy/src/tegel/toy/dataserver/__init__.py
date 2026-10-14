@@ -33,22 +33,22 @@ class ToyExtractor(Extractor):
     def process(self, input_path: str, options: dict[str, Any]) -> ProcessedDataPackage:
         path = Path(input_path)
         sidecar = path.with_suffix(".json")
-        metadata: dict[str, Any] = {}
+        record: dict[str, Any] = {}
         if sidecar.is_file():
             loaded = json.loads(sidecar.read_text(encoding="utf-8"))
             if isinstance(loaded, dict):
-                metadata.update(loaded)
-        metadata["plugin_id"] = self.plugin_id
-        metadata["source_name"] = path.name
-        metadata["payload_uri"] = path.resolve().as_uri()
-        metadata["resource_type"] = RECORD.name
-        metadata["resource_type_version"] = RECORD.version
-        key = options.get("key")
-        if isinstance(key, str) and key:
-            metadata["key"] = key
-        elif "uuid" not in metadata:
-            metadata["uuid"] = path.stem
-        return ProcessedDataPackage(payload_path=str(path), metadata=metadata, metrics={})
+                record.update(loaded)
+        relations = record.pop("relations", None) or []
+        if "uuid" not in record:
+            record["uuid"] = path.stem
+        return ProcessedDataPackage(
+            payload_path=str(path),
+            record=record,
+            resource_type=RECORD.name,
+            payload_uri=path.resolve().as_uri(),
+            relations=relations,
+            metrics={},
+        )
 
 
 class ToyReader:
@@ -65,8 +65,8 @@ class ToyReader:
         return resource.type == RECORD.name
 
     def describe(self, resource: Resource) -> DataDescriptor:
-        uri = resource.metadata.get("payload_uri")
-        if not isinstance(uri, str) or not uri:
+        uri = resource.payload_uri
+        if not uri:
             raise ValueError("payload_uri is required")
         path = Path(unquote(urlparse(uri).path))
         if path.suffix == ".npy":

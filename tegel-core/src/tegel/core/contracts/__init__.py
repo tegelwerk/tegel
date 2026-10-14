@@ -3,8 +3,11 @@
 from tegel.core.contracts.capabilities import Capabilities, InstalledPlugin, Principal
 from tegel.core.contracts.provenance import Provenance
 from tegel.core.contracts.resources import (
+    ENVELOPE_KEY,
+    RECORD_KEY,
     RO_CRATE,
     RO_CRATE_CONTEXT,
+    CatalogEnvelope,
     DataDescriptor,
     Relation,
     Resource,
@@ -17,9 +20,10 @@ from tegel.core.contracts.resources import (
     hit_from_metadata,
     metadata_matches,
     parse_search_body,
-    provenance_from_metadata,
-    relations_from_metadata,
+    resource_from_catalog,
+    resource_id_for,
     resource_uri,
+    split_catalog_metadata,
     unknown_filters,
 )
 from tegel.core.contracts.types import (
@@ -32,9 +36,12 @@ from tegel.core.contracts.types import (
 )
 
 __all__ = [
+    "ENVELOPE_KEY",
+    "RECORD_KEY",
     "RO_CRATE",
     "RO_CRATE_CONTEXT",
     "Capabilities",
+    "CatalogEnvelope",
     "DataDescriptor",
     "InstalledPlugin",
     "Principal",
@@ -55,9 +62,10 @@ __all__ = [
     "metadata_matches",
     "parse_search_body",
     "profile_unknown_slots",
-    "provenance_from_metadata",
-    "relations_from_metadata",
+    "resource_from_catalog",
+    "resource_id_for",
     "resource_uri",
+    "split_catalog_metadata",
     "type_chain",
     "unknown_filters",
 ]

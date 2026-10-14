@@ -5,7 +5,7 @@ from __future__ import annotations
 import httpx
 
 from tegel.core.client.data import DataClient, DataClientError
-from tegel.core.contracts.resources import StructureFamily
+from tegel.core.contracts.resources import ENVELOPE_KEY, RECORD_KEY, StructureFamily
 
 
 def assert_read_only_api(
@@ -49,6 +49,10 @@ def assert_read_only_api(
         metadata = client.metadata(resource_id)
         if not isinstance(metadata, dict):
             raise AssertionError("metadata must be an object")
+        if metadata != resource.metadata or ENVELOPE_KEY in metadata or RECORD_KEY in metadata:
+            raise AssertionError("metadata must be the record block")
+        if resource.provenance is None or resource.type is None:
+            raise AssertionError("get must project type and provenance from the tegel block")
         descriptor = client.open_data(resource_id)
         if descriptor.family is StructureFamily.array and not descriptor.shape:
             raise AssertionError("an array descriptor must include shape")

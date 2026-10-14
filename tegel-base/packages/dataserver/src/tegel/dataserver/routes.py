@@ -46,14 +46,18 @@ def mount_routes(app: FastAPI) -> None:
     @app.get("/capabilities")
     def capabilities(request: Request) -> dict:
         principal(request)
+        profile = app.state.tegel_profile
         body = Capabilities(
             spec_version=SPEC_VERSION,
             server_version=__version__,
             plugins=app.state.tegel_registry.installed(),
             search_document=app.state.tegel_config.search_document,
             auth=app.state.tegel_auth.name,
+            schema_id=profile.schema_id,
+            schema_version=profile.schema_version,
+            class_name=profile.class_name,
         )
-        return body.model_dump()
+        return body.model_dump(by_alias=True)
 
     @app.get("/search")
     def search(request: Request) -> Response:
@@ -126,8 +130,8 @@ def mount_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="No reader validated the resource") from exc
         if descriptor.family is not StructureFamily.bytes:
             raise HTTPException(status_code=404, detail="Content is only available for bytes")
-        uri = found.metadata.get("payload_uri")
-        if not isinstance(uri, str) or not uri:
+        uri = found.payload_uri
+        if not uri:
             raise HTTPException(status_code=404, detail="Resource not found")
         handle = app.state.tegel_storage.open_bytes(uri)
         try:

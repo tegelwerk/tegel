@@ -24,7 +24,20 @@ Each entry point loads a class, except `tegel.resource_types`, which loads a `Re
 
 ## Extractor contract
 
-The ETL application rejects a plugin or a package that fails any of these checks. In `tegel.core.plugins`, `Registry` applies the first two when it loads `tegel.extractors`, `first_true` applies the bool check when it selects a plugin, and `check_package` applies the rest to each package.
+`process` returns a `ProcessedDataPackage`:
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `payload_path` | `str` | a readable file |
+| `record` | `dict[str, Any]` | domain fields only; every key is a slot of the profile's class |
+| `resource_type` | `str` | a registered `ResourceType.name` |
+| `payload_uri` | `str \| None` | default `None`; the location `/data/content` and readers use |
+| `relations` | `list[Relation]` | `{rel, target}` objects, default `[]` |
+| `metrics` | `dict[str, float]` | non-empty string keys |
+
+The extractor writes no Tegel bookkeeping. Staging takes `plugin_id` from the plugin, `source_name` from the input path's file name, and `resource_type_version` from the registered type, and stores them in the row's `tegel` block (see [dataserver.md](dataserver.md), "Stored row").
+
+The ETL application rejects a plugin or a package that fails any of these checks. In `tegel.core.plugins`, `Registry` applies the first two when it loads `tegel.extractors`, `first_true` applies the bool check when it selects a plugin, and `check_package` applies the rest to each package. `catalog_metadata` runs `check_package` and returns the stored row.
 
 - the class subclasses the extractor interface and constructs with no arguments
 - `plugin_id` is a non-empty string and is not already used
@@ -32,14 +45,15 @@ The ETL application rejects a plugin or a package that fails any of these checks
 - `process` can be called with an input path and an options dict
 - `process` returns a `ProcessedDataPackage`
 - `payload_path` is a readable file
-- `metadata["plugin_id"]` equals the plugin id
-- `metadata["source_name"]` is a non-empty string
+- `record` is a dict and every key is a slot of the profile's class
+- `resource_type` is a registered resource type
 - every metrics value is a float, and every metrics key is a non-empty string
-- every metadata key is a slot of the profile's class
 
 `validate` answers "this plugin can read this file", not "how sure is it". The first true result in entry-point name order wins. Remaining plugins are not called.
 
 ```python
+from pathlib import Path
+
 from tegel.core.plugins import Extractor, ProcessedDataPackage
 
 
@@ -54,16 +68,18 @@ class ExamplePlugin(Extractor):
     def process(self, input_path: str, options: dict) -> ProcessedDataPackage:
         return ProcessedDataPackage(
             payload_path=input_path,
-            metadata={"plugin_id": self.plugin_id, "source_name": "record.json", "uuid": "record-1"},
+            record={"uuid": "record-1", "title": "first"},
+            resource_type="example.record",
+            payload_uri=Path(input_path).resolve().as_uri(),
             metrics={},
         )
 ```
 
-The catalog id is `options["key"]` when that is a non-empty string, otherwise metadata `key` or `uuid`. There is no filename fallback.
+The catalog id is the caller's `options["key"]` when that is a non-empty string, otherwise the record's value for the profile's `entity.identifier`. There is no filename fallback.
 
-The package also supplies a search profile. The profile names a LinkML schema by `schema_id`, `schema_version`, `schema_path`, and `class`. The schema lives in its own repository and is loaded from `TEGEL_SCHEMA_ROOT`. The incarnation does not contain it. `metadata_schema` on the `ResourceType` is the schema id. The profile's `search`, `properties`, and `entity` fields must be slots of the named class, and so must every metadata key the extractor writes, including `plugin_id` and `source_name`. A field the class lacks is a change for the schema owner. Tegel does not add it.
+The package also supplies a search profile. The profile names a LinkML schema by `schema_id`, `schema_version`, `schema_path`, and `class`. The schema lives in its own repository and is loaded from `TEGEL_SCHEMA_ROOT`. The incarnation does not contain it. `metadata_schema` on every `ResourceType` is that schema id; the server refuses to start otherwise. The profile's `search`, `properties`, and `entity` fields must be slots of the named class, and so must every key of `record`. The schema needs no Tegel fields. A domain field the class lacks is a change for the schema owner. Tegel does not add it.
 
-`search` lists categorical fields only: codes, names, enumerations, and booleans stored as the strings `"true"` or `"false"`. Numbers, timestamps, free text, and comma-joined lists go in `properties`. Search comparison is exact equality between the query string and the value stored in catalog metadata, so a stored number or boolean never matches, and those other fields do not match usefully there.
+`search` lists categorical fields only: codes, names, enumerations, and booleans. A stored boolean matches the query `true` or `false`, lowercase. A stored string matches by equality. Any other stored value never matches, so numbers, timestamps, free text, and lists go in `properties`.
 
 ## Upstream records
 
@@ -86,8 +102,8 @@ An index plugin implements read methods `get(resource_id)` and `keys()`. Writes 
 ## What an incarnation provides
 
 1. A package that depends on `tegel-core`.
-2. A profile YAML that names an external LinkML schema and class, and whose fields are slots of that class.
-3. A `ResourceType` entry point whose `metadata_schema` is that schema id, with an optional `parent` for fallback.
+2. A profile YAML that names an external LinkML schema and class, and whose fields are slots of that class. The schema needs no Tegel fields; it is used as is.
+3. A `ResourceType` entry point whose `metadata_schema` is that schema id, with an optional `parent` for fallback. Its `version` is the incarnation's mapping version, independent of `schema_version`.
 4. An extractor entry point that passes the contract above.
 5. A reader entry point for the payload that extractor produces.
 6. Any storage, auth, or index replacement the deployment needs. The reference server already registers Keycloak.
@@ -97,10 +113,10 @@ An index plugin implements read methods `get(resource_id)` and `keys()`. Writes 
 `tegel-toy` is that package. The reference server loads it and launches Tiled.
 
 - `tegel-base/examples/toy/pyproject.toml` registers `toy-record` on `tegel.resource_types`, `tegel.extractors`, and `tegel.readers`.
-- `tegel-base/examples/schemas/toy/record.yaml` is the LinkML schema, outside the toy package. `tegel-base/examples/toy/schema/profile.yaml` names it and its `Record` class, and selects `channel` for search and for the RO-Crate properties.
-- `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py` is the resource type, the extractor, and the reader. The extractor claims `.npy` files and merges the JSON sidecar next to each one. The reader returns an array descriptor from the `.npy` header and does not read the array payload. A payload that is not `.npy` is described as `bytes`.
+- `tegel-base/examples/schemas/toy/record.yaml` is the LinkML schema, outside the toy package. It holds domain slots only; `recorded` comes from the mixin `Timestamped`. `tegel-base/examples/toy/schema/profile.yaml` names it and its `Record` class, searches on `channel` and the boolean `calibrated`, and uses `uuid` as the identifier.
+- `tegel-base/examples/toy/src/tegel/toy/dataserver/__init__.py` is the resource type, the extractor, and the reader. The extractor claims `.npy` files and returns the JSON sidecar next to each one as the record, with its `relations` moved to the package's `relations`. The reader returns an array descriptor from the `.npy` header at `Resource.payload_uri` and does not read the array payload. A payload that is not `.npy` is described as `bytes`.
 - `tegel-base/examples/toy/tests/test_extractor.py` checks the extractor contract.
-- `tegel-base/tests/integration/test_read_api.py` builds the reference server with `create_app`, writes one row with `insert_record`, and runs `assert_incarnation` on the toy package. It does not write through the HTTP API.
+- `tegel-base/tests/integration/test_read_api.py` builds the reference server with `create_app`, writes rows built by `catalog_metadata` with `insert_record`, and runs `assert_incarnation` on the toy package. It does not write through the HTTP API.
 
 Copy those three entry points, point the profile at the schema you were given, and keep modality vocabulary in the incarnation package. The reference process reads the installed entry points and the profile path you configure. It does not import the incarnation by name.
 

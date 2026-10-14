@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import inspect
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from importlib.metadata import EntryPoints, entry_points
 from pathlib import Path
 from typing import Any, Protocol
@@ -17,8 +17,15 @@ from typing import Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from tegel.core.contracts.capabilities import InstalledPlugin, Principal
-from tegel.core.contracts.resources import DataDescriptor, Resource
-from tegel.core.contracts.types import ResourceType
+from tegel.core.contracts.resources import (
+    ENVELOPE_KEY,
+    RECORD_KEY,
+    CatalogEnvelope,
+    DataDescriptor,
+    Relation,
+    Resource,
+)
+from tegel.core.contracts.types import ResourceType, SearchProfile
 
 GROUPS: tuple[str, ...] = (
     "tegel.resource_types",
@@ -36,12 +43,19 @@ class PluginContractError(ValueError):
 
 
 class ProcessedDataPackage(BaseModel):
-    """Payload path, metadata, and metrics returned by an extractor."""
+    """What an extractor returns for one input.
 
-    model_config = ConfigDict(extra="ignore")
+    ``record`` holds domain fields only. Tegel builds its own ``tegel`` block
+    from the plugin, the input path, and the registered resource type.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     payload_path: str = Field(min_length=1)
-    metadata: dict[str, Any]
+    record: dict[str, Any]
+    resource_type: str = Field(min_length=1)
+    payload_uri: str | None = Field(default=None, min_length=1)
+    relations: list[Relation] = Field(default_factory=list)
     metrics: dict[str, float]
 
     @field_validator("metrics", mode="before")
@@ -181,35 +195,63 @@ def check_package(
     package: object,
     *,
     slots: Collection[str],
+    resource_types: Mapping[str, ResourceType],
 ) -> ProcessedDataPackage:
     """Reject a process result that is not a usable package.
 
-    ``slots`` are the slot names of the profile's class. A metadata key that is
-    not one of them is an error, provenance keys included.
+    ``slots`` are the slot names of the profile's class; every ``record`` key
+    must be one. ``resource_types`` maps registered type names to types.
     """
     plugin_id = plugin.plugin_id
     if not isinstance(package, ProcessedDataPackage):
         raise PluginContractError(f"{plugin_id}: process must return a ProcessedDataPackage")
     if not Path(package.payload_path).is_file():
         raise PluginContractError(f"{plugin_id}: payload_path must be a readable file")
-    if package.metadata.get("plugin_id") != plugin_id:
-        raise PluginContractError(f"{plugin_id}: metadata plugin_id must equal the plugin id")
-    source_name = package.metadata.get("source_name")
-    if not isinstance(source_name, str) or not source_name:
+    if not isinstance(package.record, dict):
+        raise PluginContractError(f"{plugin_id}: record must be a dict")
+    allowed = set(slots)
+    extra = sorted(str(key) for key in package.record if key not in allowed)
+    if extra:
+        names = ", ".join(extra)
+        raise PluginContractError(f"{plugin_id}: record keys are not class slots: {names}")
+    if package.resource_type not in resource_types:
         raise PluginContractError(
-            f"{plugin_id}: metadata source_name must be a non-empty string"
+            f"{plugin_id}: resource_type {package.resource_type!r} is not registered"
         )
     for key, value in package.metrics.items():
         if not isinstance(key, str) or not key:
             raise PluginContractError(f"{plugin_id}: metrics keys must be non-empty strings")
         if not isinstance(value, float):
             raise PluginContractError(f"{plugin_id}: metrics[{key!r}] must be a float")
-    allowed = set(slots)
-    extra = sorted(key for key in package.metadata if key not in allowed)
-    if extra:
-        names = ", ".join(extra)
-        raise PluginContractError(f"{plugin_id}: metadata keys are not class slots: {names}")
     return package
+
+
+def catalog_metadata(
+    plugin: Extractor,
+    package: object,
+    *,
+    source_path: str | Path,
+    profile: SearchProfile,
+    slots: Collection[str],
+    resource_types: Mapping[str, ResourceType],
+) -> dict[str, Any]:
+    """Check a package and return the stored row ``{"record": ..., "tegel": ...}``."""
+    checked = check_package(plugin, package, slots=slots, resource_types=resource_types)
+    envelope = CatalogEnvelope(
+        plugin_id=plugin.plugin_id,
+        source_name=Path(source_path).name,
+        resource_type=checked.resource_type,
+        resource_type_version=resource_types[checked.resource_type].version,
+        payload_uri=checked.payload_uri,
+        relations=checked.relations,
+        schema_id=profile.schema_id,
+        schema_version=profile.schema_version,
+        class_name=profile.class_name,
+    )
+    return {
+        RECORD_KEY: dict(checked.record),
+        ENVELOPE_KEY: envelope.model_dump(mode="json", by_alias=True),
+    }
 
 
 def _require_call(method: object, arguments: tuple[object, ...], message: str) -> None:

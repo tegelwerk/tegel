@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
 from typing import Any
@@ -11,13 +12,16 @@ from tegel.core.contracts.resources import Resource, resource_from_catalog, reso
 from tegel.core.contracts.types import SearchProfile
 from tegel.dataserver.catalog import sqlite_path
 
+_log = logging.getLogger("tegel.index")
+
 
 class TiledCatalogIndex:
     """``get`` and ``keys`` over the catalog the ETL application committed.
 
     A no-argument constructor reads ``TEGEL_CATALOG_URI`` and
     ``TEGEL_PUBLIC_ORIGIN``. The launch process passes the open catalog's
-    URI and the loaded profile directly.
+    URI and the loaded profile directly. A row that is not ``{record, tegel}``
+    is not served.
     """
 
     def __init__(
@@ -29,21 +33,28 @@ class TiledCatalogIndex:
         self.catalog_uri = catalog_uri or os.environ["TEGEL_CATALOG_URI"]
         self.public_origin = public_origin or os.environ["TEGEL_PUBLIC_ORIGIN"]
         self.profile = profile
+        self._warned: set[str] = set()
 
     def get(self, resource_id: str) -> Resource | None:
-        metadata = self._metadata(resource_id)
-        if metadata is None:
+        stored = self._metadata(resource_id)
+        if stored is None:
             return None
-        type_name = _text(metadata.get("resource_type"))
-        type_version = _text(metadata.get("resource_type_version"))
-        return resource_from_catalog(
-            resource_id,
-            resource_uri(self.public_origin, resource_id),
-            metadata,
-            type_name=type_name,
-            type_version=type_version,
-            profile=self.profile,
-        )
+        try:
+            return resource_from_catalog(
+                resource_id,
+                resource_uri(self.public_origin, resource_id),
+                stored,
+                profile=self.profile,
+            )
+        except ValueError as exc:
+            if resource_id not in self._warned:
+                self._warned.add(resource_id)
+                _log.warning(
+                    "catalog row %s is not a Tegel 0.3 row and must be re-ingested (%s)",
+                    resource_id,
+                    exc,
+                )
+            return None
 
     def keys(self) -> list[str]:
         with sqlite3.connect(sqlite_path(self.catalog_uri)) as connection:
@@ -66,9 +77,3 @@ class TiledCatalogIndex:
         if not isinstance(payload, dict):
             return None
         return payload
-
-
-def _text(value: object) -> str | None:
-    if isinstance(value, str) and value:
-        return value
-    return None

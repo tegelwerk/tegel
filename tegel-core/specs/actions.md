@@ -26,9 +26,9 @@ The flow fails when `records` is not a directory, when no file is claimed, or wh
 
 1. selects the first extractor, in entry-point name order, whose `validate` is true; a path no extractor claims is skipped
 2. calls `process(path, {})`
-3. checks the package with `check_package`, using the slots of the class the profile at `TEGEL_PROFILE` names under `TEGEL_SCHEMA_ROOT`
-4. takes the catalog key from metadata `key`, then `uuid`; the key must be one path segment
-5. writes one node with structure family `bytes` and the package metadata
+3. builds the stored row with `catalog_metadata`, which runs `check_package` against the slots of the class the profile at `TEGEL_PROFILE` names under `TEGEL_SCHEMA_ROOT` and the installed resource types, then returns `{"record": ..., "tegel": ...}`
+4. takes the catalog key from `resource_id_for(record, profile)`: the record's `entity.identifier` value, which must be one path segment
+5. writes one node with structure family `bytes` and that row as its metadata
 
 Staging never opens the production catalog. It does not copy payload files.
 

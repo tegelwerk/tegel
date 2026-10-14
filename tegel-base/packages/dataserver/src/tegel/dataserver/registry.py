@@ -15,6 +15,21 @@ def load_registry() -> Registry:
     return Registry()
 
 
+def schema_mismatch(registry: Registry, profile: SearchProfile) -> str | None:
+    """Return why the installed resource types do not serve the profile's schema."""
+    types = registry.resource_types()
+    if not types:
+        return "no tegel.resource_types entry point is installed"
+    for name in sorted(types):
+        found = types[name].metadata_schema
+        if found != profile.schema_id:
+            return (
+                f"resource type {name} uses schema {found}; "
+                f"the profile names {profile.schema_id}"
+            )
+    return None
+
+
 def readers_in_order(registry: Registry) -> list[Reader]:
     """Instantiate readers in entry-point name order."""
     loaded: list[Reader] = []

@@ -1,13 +1,16 @@
 id: https://w3id.org/tegel/toy/profile
 name: toy records
 schema_id: https://w3id.org/tegel/toy/record
-schema_version: "1"
+schema_version: "2"
 schema_path: toy/record.yaml
 class: Record
 search:
   - channel
+  - calibrated
 properties:
   - channel
+  - calibrated
+  - recorded
 entity:
   name: sample_name
   identifier: uuid

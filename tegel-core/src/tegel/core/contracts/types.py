@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ResourceType(BaseModel):
@@ -49,14 +49,28 @@ class SearchProfile(BaseModel):
     properties: list[str]
     entity: ProfileEntity
 
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _quoted_version(cls, value: object) -> object:
+        if not isinstance(value, str):
+            raise ValueError(
+                "schema_version must be a quoted string in the profile: "
+                f"got {type(value).__name__} {value!r}"
+            )
+        return value
+
 
 def class_slot_specs(schema: dict[str, Any], class_name: str) -> dict[str, dict[str, Any]]:
     """Return the slots of ``class_name`` with their definitions.
 
-    Slots are the class's ``attributes`` and ``slots``, then the same from its
-    ``is_a`` ancestors in this document. Ancestors come first. ``slot_usage``
-    on a class refines the definition. Imports are not followed, so an import
-    other than ``linkml:*`` is an error.
+    Classes are read in this order: ``is_a`` ancestors (recursively, ancestors
+    first), then ``mixins`` in listed order (each expanded the same way), then
+    the class itself. Each contributes its ``slots`` list, defined in the
+    document's top-level ``slots``, then its ``attributes``. The first
+    definition of a name is kept. ``slot_usage`` on each class, in the same
+    order, refines a definition. A listed slot with no top-level definition,
+    a missing class, and a cycle are errors. Imports are not followed, so an
+    import other than ``linkml:*`` is an error.
     """
     imports = schema.get("imports") or []
     if not isinstance(imports, list):
@@ -73,27 +87,14 @@ def class_slot_specs(schema: dict[str, Any], class_name: str) -> dict[str, dict[
     definitions = schema.get("slots") or {}
     if not isinstance(definitions, dict):
         raise ValueError("LinkML slots must be a mapping")
-    chain: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    current: str | None = class_name
-    while current:
-        if current in seen:
-            raise ValueError(f"LinkML is_a cycle at {current}")
-        seen.add(current)
-        spec = classes.get(current)
-        if spec is None:
-            raise ValueError(f"LinkML class {current} is not in the schema")
-        if not isinstance(spec, dict):
-            spec = {}
-        chain.append(spec)
-        parent = spec.get("is_a")
-        current = parent if isinstance(parent, str) and parent else None
     found: dict[str, dict[str, Any]] = {}
-    for spec in reversed(chain):
+    for owner, spec in _expand(classes, class_name, []):
         listed = spec.get("slots") or []
         if not isinstance(listed, list):
             raise ValueError("LinkML class slots must be a list")
         for name in listed:
+            if name not in definitions:
+                raise ValueError(f"slot {name} on class {owner} is not defined in the schema")
             definition = definitions.get(name)
             found.setdefault(str(name), dict(definition) if isinstance(definition, dict) else {})
         attributes = spec.get("attributes") or {}
@@ -111,8 +112,36 @@ def class_slot_specs(schema: dict[str, Any], class_name: str) -> dict[str, dict[
     return found
 
 
+def _expand(
+    classes: dict[str, Any], class_name: str, path: list[str]
+) -> list[tuple[str, dict[str, Any]]]:
+    """Return ``(name, spec)`` for the classes ``class_name`` reads, in slot order.
+
+    ``path`` is the chain being expanded. A name already on it is a cycle.
+    """
+    if class_name in path:
+        raise ValueError(f"LinkML is_a or mixins cycle at {class_name}")
+    spec = classes.get(class_name)
+    if spec is None:
+        raise ValueError(f"LinkML class {class_name} is not in the schema")
+    if not isinstance(spec, dict):
+        spec = {}
+    inner = [*path, class_name]
+    ordered: list[tuple[str, dict[str, Any]]] = []
+    parent = spec.get("is_a")
+    if isinstance(parent, str) and parent:
+        ordered.extend(_expand(classes, parent, inner))
+    mixins = spec.get("mixins") or []
+    if not isinstance(mixins, list):
+        raise ValueError(f"LinkML mixins on class {class_name} must be a list")
+    for mixin in mixins:
+        ordered.extend(_expand(classes, str(mixin), inner))
+    ordered.append((class_name, spec))
+    return ordered
+
+
 def linkml_attribute_names(schema: dict[str, Any], class_name: str) -> list[str]:
-    """Return the slot names of ``class_name``, including ``is_a`` ancestors."""
+    """Return the slot names of ``class_name``, including ancestors and mixins."""
     return list(class_slot_specs(schema, class_name))
 
 

@@ -1,7 +1,8 @@
-"""Read-only provenance projected from catalog metadata.
+"""Read-only provenance projected from the catalog row's ``tegel`` block.
 
-The data server does not accept a provenance write. ETL records ``plugin_id``
-and ``source_name`` on the catalog entry, and a read projects them here.
+The data server does not accept a provenance write. Staging records
+``plugin_id`` and ``source_name`` in the ``tegel`` block, and a read projects
+them here.
 """
 
 from pydantic import BaseModel, ConfigDict, Field

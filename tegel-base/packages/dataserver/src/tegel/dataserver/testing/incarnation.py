@@ -12,12 +12,13 @@ import yaml
 
 from tegel.core.contracts.resources import (
     DataDescriptor,
-    Resource,
     StructureFamily,
+    resource_from_catalog,
+    resource_id_for,
     resource_uri,
 )
-from tegel.core.contracts.types import class_slot_specs
-from tegel.core.plugins import PluginContractError, check_package
+from tegel.core.contracts.types import ResourceType, SearchProfile, class_slot_specs
+from tegel.core.plugins import PluginContractError, catalog_metadata
 from tegel.core.spec import schema_root_from_env
 from tegel.dataserver.spec import load_spec, resolve_schema_path
 from tegel.dataserver.testing.conformance import assert_read_only_api
@@ -79,6 +80,13 @@ def assert_incarnation_profile(
 
     ``schema_root`` defaults to ``TEGEL_SCHEMA_ROOT``.
     """
+    return _profile_and_slots(package_root, schema_root)[1]
+
+
+def _profile_and_slots(
+    package_root: Path | str,
+    schema_root: Path | str | None,
+) -> tuple[SearchProfile, frozenset[str]]:
     root = Path(package_root).resolve()
     profile_path = root / "schema" / "profile.yaml"
     try:
@@ -96,7 +104,7 @@ def assert_incarnation_profile(
             raise AssertionError(f"search field {name} is multivalued")
         if _range_name(spec.get("range")) in _FORBIDDEN_RANGES:
             raise AssertionError(f"search field {name} is not categorical")
-    return frozenset(slots)
+    return profile, frozenset(slots)
 
 
 def assert_incarnation(
@@ -120,8 +128,15 @@ def assert_incarnation(
     assert_incarnation_layout(root)
     assert_incarnation_ships_no_schema(root)
     assert_incarnation_project(root)
-    slots = assert_incarnation_profile(root, schema_root)
-    extractor, reader = _load_plugins(root)
+    profile, slots = _profile_and_slots(root, schema_root)
+    resource_type, extractor, reader = _load_plugins(root)
+    if not isinstance(resource_type, ResourceType):
+        raise AssertionError("tegel.resource_types must load a ResourceType")
+    if resource_type.metadata_schema != profile.schema_id:
+        raise AssertionError(
+            f"resource type {resource_type.name} uses schema {resource_type.metadata_schema}; "
+            f"the profile names {profile.schema_id}"
+        )
     positive = str(positive_fixture)
     rejected = str(rejected_input)
     if extractor.validate(positive) is not True:
@@ -129,17 +144,23 @@ def assert_incarnation(
     if extractor.validate(rejected) is not False:
         raise AssertionError("validate on the rejected input must be false")
     try:
-        package = check_package(extractor, extractor.process(positive, {}), slots=slots)
-    except PluginContractError as exc:
+        package = extractor.process(positive, {})
+        stored = catalog_metadata(
+            extractor,
+            package,
+            source_path=positive,
+            profile=profile,
+            slots=slots,
+            resource_types={resource_type.name: resource_type},
+        )
+        resource_id_for(package.record, profile)
+    except (PluginContractError, ValueError) as exc:
         raise AssertionError(str(exc)) from exc
-    type_name = package.metadata.get("resource_type")
-    type_version = package.metadata.get("resource_type_version")
-    resource = Resource(
-        id=resource_id,
-        uri=resource_uri(base_url, resource_id),
-        type=type_name if isinstance(type_name, str) else None,
-        type_version=type_version if isinstance(type_version, str) else None,
-        metadata=package.metadata,
+    resource = resource_from_catalog(
+        resource_id,
+        resource_uri(base_url, resource_id),
+        stored,
+        profile=profile,
     )
     descriptor = reader.describe(resource)
     if not isinstance(descriptor, DataDescriptor):
@@ -201,14 +222,16 @@ def _load_plugins(package_root: Path) -> tuple[Any, Any]:
     with path.open("rb") as handle:
         project = tomllib.load(handle)["project"]
     entry_points = project["entry-points"]
+    type_spec = _single_target(entry_points["tegel.resource_types"])
     extractor_spec = _single_target(entry_points["tegel.extractors"])
     reader_spec = _single_target(entry_points["tegel.readers"])
     try:
+        resource_type = _load(type_spec)
         extractor = _load(extractor_spec)()
         reader = _load(reader_spec)()
     except Exception as exc:
         raise AssertionError(f"entry point did not construct: {exc}") from exc
-    return extractor, reader
+    return resource_type, extractor, reader
 
 
 def _single_target(table: dict[str, object]) -> str:

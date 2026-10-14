@@ -9,8 +9,8 @@ BSD-3-Clause. Copyright is held by The Tegelwerk Contributors; see `LICENSE`.
 ## Layout
 
 - `specs/` — the specification. Start at [`specs/README.md`](specs/README.md).
-- `src/tegel/core/contracts/` — pydantic wire models (`Capabilities`, `Resource`, `ResourcePage`, `DataDescriptor`, `SearchResult`, `SearchProfile`, `ResourceType`, `Provenance`) and the RO-Crate search document builder and parser.
-- `src/tegel/core/plugins.py` — the entry-point groups, `Registry`, the `Extractor` base class, the reader, previewer, storage, auth, and index protocols, `first_true`, and `check_package`.
+- `src/tegel/core/contracts/` — pydantic wire models (`Capabilities`, `Resource`, `ResourcePage`, `DataDescriptor`, `SearchResult`, `SearchProfile`, `ResourceType`, `Provenance`), the stored-row envelope `CatalogEnvelope` with `split_catalog_metadata`, `resource_from_catalog`, and `resource_id_for`, search matching, and the RO-Crate search document builder and parser.
+- `src/tegel/core/plugins.py` — the entry-point groups, `Registry`, the `Extractor` base class and `ProcessedDataPackage`, the reader, previewer, storage, auth, and index protocols, `first_true`, `check_package`, and `catalog_metadata`, which builds the stored `{"record", "tegel"}` row.
 - `src/tegel/core/spec.py` — `load_spec(profile_path, schema_root)`, which loads a search profile and the LinkML schema it names under `TEGEL_SCHEMA_ROOT`, and `record_slots`, which returns the slots of the profile's class.
 - `src/tegel/core/client/` — `DataClient`: capabilities, search, browse, get, metadata, data descriptors, and bytes. Bearer token, or OAuth2 client credentials. No write method.
 - `src/tegel/core/version.py` — `SPEC_VERSION`.

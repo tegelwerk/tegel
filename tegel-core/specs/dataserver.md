@@ -47,7 +47,7 @@ An incarnation changes what that process loads. It does not change the HTTP cont
 
 The process depends on `tiled[server]>=0.2.15`. It refuses to start when `tiled.graph` cannot be imported, when the installed Tiled is older than 0.2.15, or when the catalog database has no `entities` table. `tegel-core` does not depend on Tiled. The reference server package does.
 
-The graph is Tiled's store for links between catalog nodes and other entities. This document's read API returns `relations` projected from catalog metadata, not from the graph.
+The graph is Tiled's store for links between catalog nodes and other entities. This document's read API returns `relations` from the stored row's `tegel` block, not from the graph. Tiled's own routes show the whole stored row, `tegel` block included.
 
 Tiled's own routes stay mounted beside the read API: `/api/v1/...`, `/api/graphql`, `/zarr/...`, and Tiled's UI. They are Tiled's interface, not part of this contract. A token the auth provider accepts is given the scopes `read:metadata` and `read:data` only, so Tiled's write routes reject it.
 
@@ -84,12 +84,12 @@ Errors use `{"detail": "<message>"}`.
 | `GET /search` | Reference: RO-Crate, `application/ld+json` |
 | `GET /resources` | JSON list of resource references |
 | `GET /resources/{id}` | `Resource` JSON |
-| `GET /resources/{id}/metadata` | Catalog metadata JSON object |
+| `GET /resources/{id}/metadata` | The record block, a JSON object |
 | `GET /resources/{id}/data` | `DataDescriptor` JSON |
 | `GET /resources/{id}/data/content` | Stored bytes, for the `bytes` family only |
 | `POST /refresh-catalog` | `{"refreshed": true}` |
 
-`GET /resources/{id}/data/content` returns the bytes at metadata `payload_uri`, opened by the storage backend, with the descriptor's media type. When the descriptor's family is not `bytes`, the response is `404` with `{"detail": "Content is only available for bytes"}`. For `array`, `table`, `container`, or `sparse`, the descriptor is the data access contract. The server does not offer a single response that contains the whole array.
+`GET /resources/{id}/data/content` returns the bytes at the resource's `payload_uri`, opened by the storage backend, with the descriptor's media type. When the descriptor's family is not `bytes`, the response is `404` with `{"detail": "Content is only available for bytes"}`. For `array`, `table`, `container`, or `sparse`, the descriptor is the data access contract. The server does not offer a single response that contains the whole array.
 
 `POST /refresh-catalog` is an operational route. It disposes Tiled's pooled catalog connections and opens a new pool, so a catalog that another process merged is visible. It writes nothing. It is the only non-GET route. When the catalog is not database-backed, the response is `409` with `{"detail": "Catalog is not database-backed"}`.
 
@@ -104,12 +104,17 @@ Unknown routes are `404`. An unknown `{id}`, or an id that contains `/` or `\`, 
 - `plugins` — installed entry points (`group`, `name`, `version`) across every group
 - `search_document` — `ro-crate` for the reference server, or another token a downstream specification defines
 - `auth` — the selected provider's name, `keycloak` for the reference server
+- `schema_id`, `schema_version`, `class` — optional; the reference server reports the loaded profile's values
 
 A client uses `search_document` to decide how to read `GET /search`. It does not assume every server returns an RO-Crate.
 
 ### Search
 
-`GET /search` takes query parameters. Each parameter is a field name and a string value. Parameters combine with AND. A resource matches when, for every parameter, the value stored in catalog metadata equals the query string. A stored number or boolean never equals a query string.
+`GET /search` takes query parameters. Each parameter is a field name and a string value. Parameters combine with AND. Each parameter is compared with the record block's value for that field:
+
+- a stored boolean matches the query `true` or `false`, exactly and lowercase
+- a stored string matches when it equals the query
+- any other stored value, and a missing field, never matches
 
 Every parameter must be listed in the active profile's `search` sequence. An unknown parameter is `400` with `{"detail": "Unknown search field <names>"}`. An empty query returns every catalog resource.
 
@@ -121,8 +126,8 @@ When `search_document` is `ro-crate`, the body is an RO-Crate 1.1 document (`app
 - the metadata file entity `ro-crate-metadata.json` conforms to RO-Crate 1.1 and to the profile `id`
 - the root dataset `./` is named by the profile `name` and has `hasPart` entries for the matches
 - each match is a `Dataset` whose `@id` and `contentUrl` are the resource URL `{public_origin}/resources/{id}`
-- `name`, `identifier`, and `dateCreated` come from the profile `entity` mapping; `name` and `identifier` fall back to the resource id
-- `additionalProperty` has one `PropertyValue` for each name in the profile `properties` list
+- `name`, `identifier`, and `dateCreated` come from the record through the profile `entity` mapping; `name` and `identifier` fall back to the resource id
+- `additionalProperty` has one `PropertyValue` for each name in the profile `properties` list, valued from the record
 
 `public_origin` comes from server configuration. The specification does not default it.
 
@@ -136,7 +141,7 @@ The reference server does not withdraw the search route because a project module
 
 `GET /resources/{id}` returns one `Resource`.
 
-`GET /resources/{id}/metadata` returns the catalog metadata object as stored. The server does not rewrite it on read.
+`GET /resources/{id}/metadata` returns the row's `record` block as stored. The `tegel` block is not part of that body.
 
 `GET /resources/{id}/data` returns the `DataDescriptor` from the first reader whose `validate` is true:
 
@@ -149,22 +154,56 @@ A reader chooses the family and the media type. A reader may return `array` with
 
 ## Resource model
 
-A resource id is the catalog node key. The ETL application sets it from `options["key"]` when the caller passed one, otherwise from metadata `key` or `uuid`. The id is a single path segment. Nothing derives an id from a filename.
+### Stored row
+
+Every catalog node's metadata has exactly two top-level keys:
+
+```json
+{
+  "record": {
+    "uuid": "rec-derived",
+    "sample_name": "red-record",
+    "channel": "red",
+    "calibrated": false
+  },
+  "tegel": {
+    "plugin_id": "toy-record",
+    "source_name": "derived.npy",
+    "resource_type": "toy.record",
+    "resource_type_version": "1",
+    "payload_uri": "file:///data/derived.npy",
+    "relations": [{"rel": "derived-from", "target": "rec-raw"}],
+    "schema_id": "https://w3id.org/tegel/toy/record",
+    "schema_version": "2",
+    "class": "Record"
+  }
+}
+```
+
+- `record` holds the domain fields. Every key is a slot of the profile's class. Values are stored as the producer wrote them: strings, numbers, booleans, lists.
+- `tegel` (`CatalogEnvelope`) is built by staging with `tegel.core.plugins.catalog_metadata`. An extractor never writes it. `plugin_id` is the extractor's, `source_name` is the input file's name, `resource_type_version` is the registered type's version, and the schema fields are the profile's. `payload_uri` is optional; `relations` defaults to `[]`.
+
+The reference index serves only rows of this shape. Any other row is skipped, and a warning on the `tegel.index` logger says it must be re-ingested.
+
+### Ids and resources
+
+A resource id is the catalog node key (`tegel.core.contracts.resource_id_for`). It is the caller's `options["key"]` when that is a non-empty string, otherwise the record's value for the profile's `entity.identifier`. The id is a non-empty string with no surrounding whitespace, no `/`, and no `\`. Nothing derives an id from a filename.
 
 `uri` is `{public_origin}/resources/{id}`, with the id percent-encoded.
 
 `Resource` fields:
 
 - `id`, `uri`
-- `type` and `type_version` from metadata `resource_type` and `resource_type_version`, when present
-- `name`, `identifier`, `date_created` from the profile entity mapping
-- `metadata` — the catalog metadata object
-- `relations` — zero or more `{rel, target}` objects projected from `metadata["relations"]` when that value is a list of those objects
-- `provenance` — present when metadata has non-empty string `plugin_id` and `source_name`
+- `type` and `type_version` from the `tegel` block's `resource_type` and `resource_type_version`
+- `name`, `identifier`, `date_created` from the record through the profile entity mapping
+- `metadata` — the `record` block
+- `relations` — the `tegel` block's `relations`
+- `provenance` — `plugin_id` and `source_name` from the `tegel` block
+- `payload_uri` — the `tegel` block's `payload_uri`, or none
 
-`provenance` is a read-only projection of catalog fields. There is no request that submits provenance.
+Provenance and relations come from the `tegel` block, which staging builds. There is no request that submits them.
 
-The data server stores and returns the metadata object. It does not convert the schema to JSON Schema in order to accept a write.
+The data server stores and returns the record. It does not convert the schema to JSON Schema in order to accept a write.
 
 Relations are how a catalog records that one resource points at another, for example a derived product and its source. The ETL pipeline writes them. The server returns them.
 
@@ -179,20 +218,31 @@ A resource type has:
 
 `parent` names a fallback type. `tegel.core.contracts.type_chain` walks the chain and raises on a cycle. The reference server's reader selection does not walk it: each reader's `validate` sees the resource and decides.
 
+One server serves one profile, one schema, and one class. At startup every installed `tegel.resource_types` entry must have `metadata_schema` equal to the profile's `schema_id`; otherwise startup stops with `resource type <name> uses schema <a>; the profile names <b>`. Startup also stops when no resource type is installed. A resource type's `version` is the incarnation's mapping version. It is independent of `schema_version`.
+
 A search profile has:
 
 - `id`, `name`
 - `schema_id` — must equal the loaded LinkML document's `id`
-- `schema_version` — must equal that document's `version`
+- `schema_version` — must equal that document's `version`; both are quoted YAML strings
 - `schema_path` — the document's path relative to `TEGEL_SCHEMA_ROOT`
 - `class` — the class whose slots define a record
 - `search` — field names a client may pass to `GET /search`
 - `properties` — field names copied into the RO-Crate as `additionalProperty`
-- `entity.name`, `entity.identifier`, `entity.dateCreated` — metadata keys for the Dataset `name`, `identifier`, and `dateCreated`
+- `entity.name`, `entity.identifier`, `entity.dateCreated` — record fields for the Dataset `name`, `identifier`, and `dateCreated`; `entity.identifier` also gives the catalog id
 
-The server loads `$TEGEL_SCHEMA_ROOT/<schema_path>` as YAML. An absolute `schema_path`, a path that leaves the root, a mismatched `id` or `version`, or a missing class is an error. The schema is not fetched over the network. An `imports` entry other than `linkml:*` is an error, because imports are not followed.
+The server loads `$TEGEL_SCHEMA_ROOT/<schema_path>` as YAML. An absolute `schema_path`, a path that leaves the root, a mismatched `id` or `version`, or a missing class is an error. A schema `version` that is not a YAML string is an error (`schema version must be a quoted string in <path>: got <type> <value>`), and so is a profile `schema_version` that is not one (`schema_version must be a quoted string in the profile: got <type> <value>`). The schema is not fetched over the network. An `imports` entry other than `linkml:*` is an error, because imports are not followed.
 
-The slots of a class are its `attributes` keys and its `slots` list, plus the same from its `is_a` ancestors in the same document. A profile field that is not one of those slots is rejected at startup. At ETL time, a record whose metadata has a key that is not a slot is rejected. Provenance keys such as `plugin_id` and `source_name` are slots only when the schema defines them. `tegel-core` reads the schema with PyYAML, does not depend on the LinkML runtime, and does not check value types.
+The slots of a class are read in this order, keeping the first definition of each name:
+
+1. its `is_a` ancestors, recursively, ancestors first
+2. its `mixins`, in listed order, each expanded the same way (a mixin's own `is_a` and `mixins` first)
+3. its own `slots` list, defined in the document's top-level `slots`
+4. its own `attributes`
+
+Then `slot_usage` on each class, in that order, refines the definitions. A name in a class's `slots` list that the top-level `slots` does not define is an error (`slot <name> on class <class> is not defined in the schema`). A cycle through `is_a` or `mixins`, and a missing class or mixin, are errors.
+
+A profile field that is not one of those slots is rejected at startup. At ETL time, a record with a key that is not a slot is rejected. The record block holds only slots of the class; Tegel's own fields live in the `tegel` block. `tegel-core` reads the schema with PyYAML, does not depend on the LinkML runtime, and does not check value types.
 
 JSON Schema files under `specs/generated/` describe the pydantic wire models. They are not the authoring format for a resource type. `specs/generated/openapi.json` lists the GET routes only. It does not list the operational `POST /refresh-catalog`.
 
@@ -222,10 +272,15 @@ An extractor plugin:
 `ProcessedDataPackage` carries:
 
 - `payload_path` — a readable file
-- `metadata` — a dict that includes `plugin_id` equal to the plugin and a non-empty `source_name`
+- `record` — the domain fields; every key is a slot of the profile's class
+- `resource_type` — a registered `ResourceType.name`
+- `payload_uri` — optional location of the payload, served by `/data/content` for `bytes`
+- `relations` — `{rel, target}` objects, default `[]`
 - `metrics` — a dict of non-empty string keys to floats
 
-The catalog id for the package is the id rule above. A package with no `key` or `uuid`, and no caller `options["key"]`, is rejected.
+The extractor does not write `plugin_id`, `source_name`, or version fields. Staging adds them in the `tegel` block.
+
+The catalog id for the package is the id rule above. A package whose record has no value for `entity.identifier`, and no caller `options["key"]`, is rejected.
 
 Re-running ETL for an id that is already in the catalog replaces that catalog record. That is an ETL write, not a data-server route.
 

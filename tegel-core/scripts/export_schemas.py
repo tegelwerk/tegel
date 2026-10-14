@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from tegel.core.contracts.capabilities import Capabilities, InstalledPlugin, Principal  # noqa: E402
 from tegel.core.contracts.provenance import Provenance  # noqa: E402
 from tegel.core.contracts.resources import (  # noqa: E402
+    CatalogEnvelope,
     DataDescriptor,
     ErrorBody,
     Relation,
@@ -35,6 +36,7 @@ MODELS = (
     InstalledPlugin,
     Principal,
     Provenance,
+    CatalogEnvelope,
     DataDescriptor,
     ErrorBody,
     Relation,

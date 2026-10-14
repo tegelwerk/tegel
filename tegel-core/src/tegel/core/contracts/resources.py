@@ -57,6 +57,42 @@ class Resource(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     relations: list[Relation] = Field(default_factory=list)
     provenance: Provenance | None = None
+    payload_uri: str | None = None
+
+
+RECORD_KEY = "record"
+ENVELOPE_KEY = "tegel"
+
+
+class CatalogEnvelope(BaseModel):
+    """The ``tegel`` block of a stored catalog row. Staging builds it."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    plugin_id: str = Field(min_length=1)
+    source_name: str = Field(min_length=1)
+    resource_type: str = Field(min_length=1)
+    resource_type_version: str = Field(min_length=1)
+    payload_uri: str | None = None
+    relations: list[Relation] = Field(default_factory=list)
+    schema_id: str
+    schema_version: str
+    class_name: str = Field(alias="class")
+
+
+def split_catalog_metadata(stored: dict[str, Any]) -> tuple[dict[str, Any], CatalogEnvelope]:
+    """Return the ``record`` and ``tegel`` blocks of a stored row."""
+    message = "catalog row is not a Tegel 0.3 row"
+    if not isinstance(stored, dict) or set(stored) != {RECORD_KEY, ENVELOPE_KEY}:
+        raise ValueError(message)
+    record = stored[RECORD_KEY]
+    if not isinstance(record, dict):
+        raise ValueError(message)
+    try:
+        envelope = CatalogEnvelope.model_validate(stored[ENVELOPE_KEY])
+    except ValueError as exc:
+        raise ValueError(message) from exc
+    return record, envelope
 
 
 class SearchQuery(BaseModel):
@@ -131,88 +167,57 @@ def resource_uri(public_origin: str, resource_id: str) -> str:
     return f"{origin}/resources/{quote(resource_id, safe='')}"
 
 
-def resource_id_from_metadata(
-    metadata: dict[str, Any],
+def resource_id_for(
+    record: dict[str, Any],
+    profile: SearchProfile,
     options: dict[str, Any] | None = None,
 ) -> str:
-    """Return the explicit catalog id.
+    """Return the catalog id.
 
-    Order is caller ``options["key"]``, then metadata ``key``, then metadata
-    ``uuid``. A missing id is an error. Filenames are not used.
+    The caller's ``options["key"]`` wins. Otherwise the id is the record's
+    value for the profile's ``entity.identifier``. It must be a non-empty
+    string with no surrounding whitespace and no ``/`` or ``\\``. Filenames
+    are not used.
     """
-    options = options or {}
-    candidates: list[Any] = [options.get("key")]
-    candidates.append(metadata.get("key"))
-    candidates.append(metadata.get("uuid"))
+    field = profile.entity.identifier
+    candidates = [(options or {}).get("key"), record.get(field)]
     for value in candidates:
         if isinstance(value, str) and value.strip() and value == value.strip():
             if "/" in value or "\\" in value:
                 raise ValueError("resource id must be a single path segment")
             return value
-    raise ValueError("resource id must be an explicit key or uuid")
-
-
-def relations_from_metadata(metadata: dict[str, Any]) -> list[Relation]:
-    """Project ``metadata["relations"]`` when it is a list of rel/target objects."""
-    raw = metadata.get("relations")
-    if not isinstance(raw, list):
-        return []
-    found: list[Relation] = []
-    for item in raw:
-        if (
-            isinstance(item, dict)
-            and isinstance(item.get("rel"), str)
-            and item["rel"]
-            and isinstance(item.get("target"), str)
-            and item["target"]
-        ):
-            found.append(Relation(rel=item["rel"], target=item["target"]))
-    return found
-
-
-def provenance_from_metadata(metadata: dict[str, Any]) -> Provenance | None:
-    """Project plugin id and source name when both are non-empty strings."""
-    plugin_id = metadata.get("plugin_id")
-    source_name = metadata.get("source_name")
-    if (
-        isinstance(plugin_id, str)
-        and plugin_id
-        and isinstance(source_name, str)
-        and source_name
-    ):
-        return Provenance(plugin_id=plugin_id, source_name=source_name)
-    return None
+    raise ValueError(f"resource id must be options['key'] or record['{field}']")
 
 
 def resource_from_catalog(
     resource_id: str,
     uri: str,
-    metadata: dict[str, Any],
+    stored: dict[str, Any],
     *,
-    type_name: str | None = None,
-    type_version: str | None = None,
     profile: SearchProfile | None = None,
 ) -> Resource:
-    """Build a resource view from a catalog metadata object."""
+    """Build a resource view from a stored ``{record, tegel}`` row."""
+    record, envelope = split_catalog_metadata(stored)
     name = None
     identifier = None
     date_created = None
     if profile is not None:
-        hit = hit_from_metadata(uri, metadata, profile, fallback_id=resource_id)
+        hit = hit_from_metadata(uri, record, profile, fallback_id=resource_id)
         name = hit.name
         identifier = hit.identifier
         date_created = hit.date_created
     return Resource(
         id=resource_id,
         uri=uri,
-        type=type_name,
-        type_version=type_version,
+        type=envelope.resource_type,
+        type_version=envelope.resource_type_version,
         name=name,
         identifier=identifier,
         date_created=date_created,
-        metadata=dict(metadata),
-        relations=relations_from_metadata(metadata),
-        provenance=provenance_from_metadata(metadata),
+        metadata=dict(record),
+        relations=list(envelope.relations),
+        provenance=Provenance(plugin_id=envelope.plugin_id, source_name=envelope.source_name),
+        payload_uri=envelope.payload_uri,
     )
 
 
@@ -221,25 +226,33 @@ def unknown_filters(filters: dict[str, str], profile: SearchProfile) -> list[str
     return [key for key in filters if key not in profile.search]
 
 
-def metadata_matches(metadata: dict[str, Any], filters: dict[str, str]) -> bool:
-    """True when every filter equals the stored metadata value."""
+def metadata_matches(record: dict[str, Any], filters: dict[str, str]) -> bool:
+    """True when every filter matches the record.
+
+    A stored ``bool`` matches the query ``"true"`` or ``"false"``. A stored
+    ``str`` matches by equality. Any other stored value never matches.
+    """
     for field, expected in filters.items():
-        if metadata.get(field) != expected:
+        value = record.get(field)
+        if isinstance(value, bool):
+            if expected != ("true" if value else "false"):
+                return False
+        elif not isinstance(value, str) or value != expected:
             return False
     return True
 
 
 def hit_from_metadata(
     uri: str,
-    metadata: dict[str, Any],
+    record: dict[str, Any],
     profile: SearchProfile,
     *,
     fallback_id: str,
 ) -> SearchHit:
-    """Copy profile entity fields and properties from catalog metadata."""
+    """Copy profile entity fields and properties from the record block."""
 
     def _text(field: str) -> str | None:
-        value = metadata.get(field)
+        value = record.get(field)
         if value is None:
             return None
         return str(value)
@@ -251,7 +264,7 @@ def hit_from_metadata(
         name=name,
         identifier=identifier,
         date_created=_text(profile.entity.date_created),
-        properties={prop: metadata.get(prop) for prop in profile.properties},
+        properties={prop: record.get(prop) for prop in profile.properties},
     )
 
 

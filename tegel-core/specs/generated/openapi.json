@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Tegel data server",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "description": "Read-only catalog API. The reference search document is an RO-Crate. A server may advertise another search_document and return SearchResult JSON."
   },
   "paths": {
@@ -341,7 +341,7 @@
         "description": "What a server implements, returned by ``GET /capabilities``.",
         "properties": {
           "spec_version": {
-            "default": "0.2.0",
+            "default": "0.3.0",
             "title": "Spec Version",
             "type": "string"
           },
@@ -366,6 +366,42 @@
             "default": "keycloak",
             "title": "Auth",
             "type": "string"
+          },
+          "schema_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema Id"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Schema Version"
+          },
+          "class": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Class"
           }
         },
         "required": [
@@ -435,6 +471,97 @@
           "source_name"
         ],
         "title": "Provenance",
+        "type": "object"
+      },
+      "CatalogEnvelope": {
+        "$defs": {
+          "Relation": {
+            "description": "A directed link stored by ETL and returned on read.",
+            "properties": {
+              "rel": {
+                "minLength": 1,
+                "title": "Rel",
+                "type": "string"
+              },
+              "target": {
+                "minLength": 1,
+                "title": "Target",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "target"
+            ],
+            "title": "Relation",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "The ``tegel`` block of a stored catalog row. Staging builds it.",
+        "properties": {
+          "plugin_id": {
+            "minLength": 1,
+            "title": "Plugin Id",
+            "type": "string"
+          },
+          "source_name": {
+            "minLength": 1,
+            "title": "Source Name",
+            "type": "string"
+          },
+          "resource_type": {
+            "minLength": 1,
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "resource_type_version": {
+            "minLength": 1,
+            "title": "Resource Type Version",
+            "type": "string"
+          },
+          "payload_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Payload Uri"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/$defs/Relation"
+            },
+            "title": "Relations",
+            "type": "array"
+          },
+          "schema_id": {
+            "title": "Schema Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "class": {
+            "title": "Class",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plugin_id",
+          "source_name",
+          "resource_type",
+          "resource_type_version",
+          "schema_id",
+          "schema_version",
+          "class"
+        ],
+        "title": "CatalogEnvelope",
         "type": "object"
       },
       "DataDescriptor": {
@@ -701,6 +828,18 @@
               }
             ],
             "default": null
+          },
+          "payload_uri": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Payload Uri"
           }
         },
         "required": [
@@ -1092,17 +1231,66 @@
         "type": "object"
       },
       "ProcessedDataPackage": {
-        "description": "Payload path, metadata, and metrics returned by an extractor.",
+        "$defs": {
+          "Relation": {
+            "description": "A directed link stored by ETL and returned on read.",
+            "properties": {
+              "rel": {
+                "minLength": 1,
+                "title": "Rel",
+                "type": "string"
+              },
+              "target": {
+                "minLength": 1,
+                "title": "Target",
+                "type": "string"
+              }
+            },
+            "required": [
+              "rel",
+              "target"
+            ],
+            "title": "Relation",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "description": "What an extractor returns for one input.\n\n``record`` holds domain fields only. Tegel builds its own ``tegel`` block\nfrom the plugin, the input path, and the registered resource type.",
         "properties": {
           "payload_path": {
             "minLength": 1,
             "title": "Payload Path",
             "type": "string"
           },
-          "metadata": {
+          "record": {
             "additionalProperties": true,
-            "title": "Metadata",
+            "title": "Record",
             "type": "object"
+          },
+          "resource_type": {
+            "minLength": 1,
+            "title": "Resource Type",
+            "type": "string"
+          },
+          "payload_uri": {
+            "anyOf": [
+              {
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Payload Uri"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/$defs/Relation"
+            },
+            "title": "Relations",
+            "type": "array"
           },
           "metrics": {
             "additionalProperties": {
@@ -1114,7 +1302,8 @@
         },
         "required": [
           "payload_path",
-          "metadata",
+          "record",
+          "resource_type",
           "metrics"
         ],
         "title": "ProcessedDataPackage",

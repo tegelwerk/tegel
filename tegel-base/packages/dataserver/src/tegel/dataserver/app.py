@@ -14,6 +14,7 @@ from tegel.dataserver.registry import (
     load_registry,
     reader_for,
     readers_in_order,
+    schema_mismatch,
 )
 from tegel.dataserver.routes import mount_routes
 from tegel.dataserver.spec import load_spec
@@ -27,8 +28,11 @@ def create_app(config: ServerConfig) -> FastAPI:
     Anonymous access is off. The process does not run ETL.
     """
     profile, _schema = load_spec(config.profile_path, config.schema_root)
-    tree = open_catalog(config.catalog_uri)
     registry = load_registry()
+    mismatch = schema_mismatch(registry, profile)
+    if mismatch is not None:
+        raise RuntimeError(mismatch)
+    tree = open_catalog(config.catalog_uri)
     auth = build_auth(registry, config)
     index = build_index(registry, config, profile)
     storage = build_storage(registry, config)

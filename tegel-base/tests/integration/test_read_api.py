@@ -2,20 +2,25 @@
 
 import json
 import math
+import sqlite3
 import struct
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from tegel.core.client.data import DataClient
 from tegel.core.contracts.resources import StructureFamily
-from tegel.core.plugins import check_package
+from tegel.core.plugins import catalog_metadata
 from tegel.dataserver.app import create_app
 from tegel.dataserver.catalog import catalog_has_graph, insert_record
 from tegel.dataserver.config import ServerConfig
 from tegel.dataserver.spec import load_spec, record_slots
 from tegel.dataserver.testing import OIDCIssuer, assert_incarnation
-from tegel.toy.dataserver import ToyExtractor
+from tegel.toy.dataserver import RECORD, ToyExtractor
 
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
 TOY = EXAMPLES / "toy"
@@ -23,7 +28,24 @@ PROFILE = TOY / "schema" / "profile.yaml"
 SCHEMA_ROOT = EXAMPLES / "schemas"
 
 
-def test_search_get_and_open_data(tmp_path: Path) -> None:
+@dataclass
+class Server:
+    http: httpx.Client
+    token: str
+    catalog: Path
+    derived: Path
+    blob: Path
+
+    def client(self) -> DataClient:
+        return DataClient("http://testserver", token=self.token, client=self.http)
+
+    def get(self, path: str) -> httpx.Response:
+        return self.http.get(path, headers={"Authorization": f"Bearer {self.token}"})
+
+
+@pytest.fixture(scope="module")
+def server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[Server]:
+    tmp_path = tmp_path_factory.mktemp("read-api")
     raw = tmp_path / "raw.npy"
     derived = tmp_path / "derived.npy"
     blob = tmp_path / "note.bin"
@@ -36,6 +58,7 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
         uuid="rec-raw",
         recorded="2026-01-01",
         channel="blue",
+        calibrated=True,
     )
     _sidecar(
         derived,
@@ -43,6 +66,7 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
         uuid="rec-derived",
         recorded="2026-01-02",
         channel="red",
+        calibrated=False,
         relations=[{"rel": "derived-from", "target": "rec-raw"}],
     )
     _sidecar(
@@ -51,9 +75,11 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
         uuid="rec-bytes",
         recorded="2026-01-03",
         channel="bin",
+        calibrated=False,
     )
     plugin = ToyExtractor()
-    slots = record_slots(*load_spec(PROFILE, SCHEMA_ROOT))
+    profile, schema = load_spec(PROFILE, SCHEMA_ROOT)
+    slots = record_slots(profile, schema)
     catalog = tmp_path / "catalog.db"
     with OIDCIssuer() as issued:
         config = ServerConfig(
@@ -73,67 +99,88 @@ def test_search_get_and_open_data(tmp_path: Path) -> None:
         for key, family, path in (
             ("rec-raw", "array", raw),
             ("rec-derived", "array", derived),
+            ("rec-bytes", "bytes", blob),
         ):
-            package = check_package(
-                plugin, plugin.process(str(path), {"key": key}), slots=slots
-            )
             insert_record(
                 app.state.tegel_catalog,
                 key=key,
-                metadata=package.metadata,
+                metadata=catalog_metadata(
+                    plugin,
+                    plugin.process(str(path), {}),
+                    source_path=path,
+                    profile=profile,
+                    slots=slots,
+                    resource_types={RECORD.name: RECORD},
+                ),
                 structure_family=family,
             )
-        insert_record(
-            app.state.tegel_catalog,
-            key="rec-bytes",
-            metadata={
-                "plugin_id": "toy-record",
-                "source_name": blob.name,
-                "payload_uri": blob.resolve().as_uri(),
-                "resource_type": "toy.record",
-                "resource_type_version": "1",
-                "sample_name": "note",
-                "uuid": "rec-bytes",
-                "recorded": "2026-01-03",
-                "channel": "bin",
-                "key": "rec-bytes",
-            },
-            structure_family="bytes",
-        )
         with TestClient(app) as http_client:
-            assert_incarnation(
-                TOY,
-                base_url="http://testserver",
-                token=issued.token,
-                http_client=http_client,
-                resource_id="rec-derived",
-                search_field="channel",
-                search_value="red",
-                positive_fixture=derived,
-                rejected_input=blob,
-                schema_root=SCHEMA_ROOT,
-            )
-            with DataClient(
-                "http://testserver",
-                token=issued.token,
-                client=http_client,
-            ) as client:
-                page = client.browse()
-                assert page.count == 3
-                found = client.get("rec-derived")
-                assert found.relations[0].rel == "derived-from"
-                assert found.relations[0].target == "rec-raw"
-                assert found.provenance is not None
-                assert found.provenance.plugin_id == "toy-record"
-                descriptor = client.open_data("rec-derived")
-                assert descriptor.family is StructureFamily.array
-                assert descriptor.shape == [4, 5]
-                content = http_client.get(
-                    "/resources/rec-derived/data/content",
-                    headers={"Authorization": f"Bearer {issued.token}"},
-                )
-                assert content.status_code == 404
-                assert client.read_bytes("rec-bytes") == b"payload-bytes"
+            yield Server(http_client, issued.token, catalog, derived, blob)
+
+
+def test_toy_incarnation_conforms(server: Server) -> None:
+    assert_incarnation(
+        TOY,
+        base_url="http://testserver",
+        token=server.token,
+        http_client=server.http,
+        resource_id="rec-derived",
+        search_field="channel",
+        search_value="red",
+        positive_fixture=server.derived,
+        rejected_input=server.blob,
+        schema_root=SCHEMA_ROOT,
+    )
+
+
+def test_get_projects_the_envelope(server: Server) -> None:
+    with server.client() as client:
+        page = client.browse()
+        assert page.count == 3
+        found = client.get("rec-derived")
+        assert found.type == "toy.record"
+        assert found.type_version == "1"
+        assert found.relations[0].rel == "derived-from"
+        assert found.relations[0].target == "rec-raw"
+        assert found.provenance is not None
+        assert found.provenance.plugin_id == "toy-record"
+        assert found.provenance.source_name == "derived.npy"
+        assert found.payload_uri == server.derived.resolve().as_uri()
+        descriptor = client.open_data("rec-derived")
+        assert descriptor.family is StructureFamily.array
+        assert descriptor.shape == [4, 5]
+    assert server.get("/resources/rec-derived/data/content").status_code == 404
+
+
+def test_metadata_route_returns_record(server: Server) -> None:
+    body = server.get("/resources/rec-derived/metadata").json()
+    assert body == {
+        "sample_name": "red-record",
+        "uuid": "rec-derived",
+        "recorded": "2026-01-02",
+        "channel": "red",
+        "calibrated": False,
+    }
+    with sqlite3.connect(server.catalog) as connection:
+        row = connection.execute(
+            "SELECT metadata FROM nodes WHERE key = ?", ("rec-derived",)
+        ).fetchone()
+    stored = json.loads(row[0])
+    assert set(stored) == {"record", "tegel"}
+    assert stored["record"] == body
+
+
+def test_search_by_boolean(server: Server) -> None:
+    with server.client() as client:
+        calibrated = client.search({"calibrated": "true"})
+        assert [hit.uri for hit in calibrated.hits] == ["http://test/resources/rec-raw"]
+        assert client.search({"calibrated": "false"}).count == 2
+        assert client.search({"calibrated": "True"}).count == 0
+
+
+def test_content_uses_envelope_payload_uri(server: Server) -> None:
+    with server.client() as client:
+        assert client.read_bytes("rec-bytes") == b"payload-bytes"
 
 
 def _route_paths(routes: object) -> set[str]:

@@ -57,7 +57,7 @@ Supply these values. Leave every other contract as the reference server already 
 
 - `name` is `<modality>.<record>`, for example `toy.record`.
 - `version` is `1` unless the task names another version.
-- `metadata_schema` is the LinkML document `id`. The two strings are equal.
+- `metadata_schema` is the LinkML document `id` and the profile's `schema_id`. The strings are equal; the server refuses to start otherwise.
 
 **Entry points.** Register the same entry-point name on all three groups. Point them at this module.
 
@@ -67,26 +67,29 @@ Supply these values. Leave every other contract as the reference server already 
 
 Do not register `tegel.auth`, `tegel.storage`, `tegel.index`, or `tegel.previewers`.
 
-**Schema.** The human supplies `schema_id`, `schema_version`, `schema_path` and `class`. Do not write or edit a schema. A field you need that the class lacks is a stop: report it for the schema owner.
+**Schema.** The human supplies `schema_id`, `schema_version`, `schema_path` and `class`. Do not write or edit a schema. A domain field you need that the class lacks is a stop: report it for the schema owner.
 
-Every key you write into catalog metadata must be a slot of that class, including `plugin_id` and `source_name`. Write `key`, `payload_uri`, `resource_type`, and `resource_type_version` only when the class defines them.
+Return domain fields in `record`, the payload location in `payload_uri`, links in `relations`. Do not write `plugin_id`, `source_name`, or version fields; Tegel adds them. Every `record` key is a slot of that class.
 
-**Profile.** Copy the four schema values into the profile as `schema_id`, `schema_version`, `schema_path` (relative to `TEGEL_SCHEMA_ROOT`), and `class`. `search`, `properties`, and `entity.name`, `entity.identifier`, and `entity.dateCreated` are slots of that class. `load_spec` rejects any other field. `search` lists categorical fields only: codes, names, enumerations, and booleans stored as `true` or `false`. Numbers, timestamps, free text, and comma-joined lists go in `properties`, because search comparison is exact string equality.
+**Profile.** Copy the four schema values into the profile as `schema_id`, `schema_version` (a quoted string), `schema_path` (relative to `TEGEL_SCHEMA_ROOT`), and `class`. `search`, `properties`, and `entity.name`, `entity.identifier`, and `entity.dateCreated` are slots of that class. `load_spec` rejects any other field. `entity.identifier` is the record field that gives the catalog id. `search` lists categorical fields only: codes, names, enumerations, and booleans. A stored boolean matches the query `true` or `false`; a stored string matches by equality; nothing else matches. Numbers, timestamps, free text, and lists go in `properties`.
 
 **Extractor.** Subclass `tegel.core.plugins.Extractor`. The class constructs with no arguments.
 
 - `plugin_id` is a non-empty string and is unique among installed extractors.
 - `validate(input_path: str) -> bool`. True means this plugin can read that path. False means it cannot. Return no other type.
-- `process(input_path, options) -> ProcessedDataPackage`.
+- `process(input_path, options) -> ProcessedDataPackage(payload_path, record, resource_type, payload_uri, relations, metrics)`.
 - `payload_path` is a readable file.
-- `metadata["plugin_id"]` equals `plugin_id`.
-- `metadata["source_name"]` is a non-empty string.
+- `record` holds domain fields only, each a slot of the class.
+- `resource_type` is `RECORD.name`.
+- `payload_uri` is the payload's URI, or `None` when there is no payload.
+- `relations` is a list of `{rel, target}` objects, default `[]`.
 - Every metrics value is a float, and every metrics key is a non-empty string.
-- The catalog id is `options["key"]` when that value is a non-empty string. Otherwise it is metadata `key` or `uuid`. There is no filename fallback.
+- The catalog id is the caller's `options["key"]` when that value is a non-empty string. Otherwise it is `record[entity.identifier]`. There is no filename fallback.
 
 **Reader.** `validate(resource) -> bool` and `describe(resource) -> DataDescriptor`.
 
-- `validate` is true only for `RECORD.name`.
+- `validate` is true only for `RECORD.name` (`resource.type`).
+- `describe` reads the payload at `resource.payload_uri`. `resource.metadata` is the record block.
 - For an array, `describe` returns `shape`, `chunks`, and `data_type` from header or store metadata. One format library may read that header.
 - `describe` does not open chunk files and does not load the array payload.
 - A payload that is not an array is `StructureFamily.bytes` with media type `application/octet-stream`.
@@ -113,7 +116,7 @@ Copy the shape of the toy package only. Do not copy another incarnation's files.
 
 Call `assert_incarnation` from `tegel.dataserver.testing` on this `dataserver/` package. Do not replace it with a private check. A passing `pytest` run of hand-written assertions is not a substitute.
 
-`assert_incarnation` checks the package layout, that the package contains no LinkML schema, runtime and dev dependencies, entry points, the profile and its external schema, search-field ranges, the extractor on the positive fixture and the rejected input, `describe`, and the read API. Build the app with `create_app`, write one row with `insert_record`, and pass that server to `assert_incarnation`. Follow the sequence in `tegel-base/tests/integration/test_read_api.py`.
+`assert_incarnation` checks the package layout, that the package contains no LinkML schema, runtime and dev dependencies, entry points, the profile and its external schema, that the resource type's `metadata_schema` equals the profile's `schema_id`, search-field ranges, the extractor on the positive fixture and the rejected input, the stored row `catalog_metadata` builds, `describe`, and the read API. Build the app with `create_app`, write one row built by `catalog_metadata` with `insert_record`, and pass that server to `assert_incarnation`. Follow the sequence in `tegel-base/tests/integration/test_read_api.py`.
 
 From the incarnation package, with `TEGEL_SCHEMA_ROOT` set to the directory the human named:
 

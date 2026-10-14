@@ -59,7 +59,12 @@ def load_spec(
             f"schema id {schema.get('id')!r} does not match schema_id {profile.schema_id!r}"
         )
     version = schema.get("version")
-    if version is None or str(version) != profile.schema_version:
+    if version is not None and not isinstance(version, str):
+        raise ValueError(
+            f"schema version must be a quoted string in {path}: "
+            f"got {type(version).__name__} {version!r}"
+        )
+    if version != profile.schema_version:
         raise ValueError(
             f"schema version {version!r} does not match schema_version "
             f"{profile.schema_version!r}"

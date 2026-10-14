@@ -9,9 +9,11 @@ Reference data server. The contract it implements is [`tegel-core/specs/dataserv
 
 Tiled's own `/api/v1`, `/api/graphql`, and `/zarr` routes stay mounted. Provider tokens get read scopes only.
 
-Startup fails when `tiled.graph` is missing, when Tiled is older than 0.2.15, when the catalog has no `entities` table, when a profile field is not a slot of the named class, or when an entry point fails to load.
+Startup fails when `tiled.graph` is missing, when Tiled is older than 0.2.15, when the catalog has no `entities` table, when a profile field is not a slot of the named class, when no resource type is installed or one names a schema other than the profile's `schema_id`, or when an entry point fails to load.
 
-The process does not walk directories, extract metadata, copy payloads, or merge catalogs. `tegel.dataserver.catalog.insert_record` writes one catalog node for tests and ETL code. No route calls it.
+Every catalog row is `{"record": ..., "tegel": ...}`. `GET /resources/{id}/metadata` returns the record; `type`, `type_version`, `provenance`, `relations`, and `payload_uri` on the resource come from the `tegel` block. `GET /capabilities` also reports the profile's `schema_id`, `schema_version`, and `class`. The index skips a row of any other shape and logs a warning on `tegel.index`.
+
+The process does not walk directories, extract metadata, copy payloads, or merge catalogs. `tegel.dataserver.catalog.insert_record` writes one catalog node, whose metadata is a row built with `tegel.core.plugins.catalog_metadata`, for tests and ETL code. No route calls it.
 
 ## Run
 
@@ -37,7 +39,7 @@ Optional: `TEGEL_OIDC_CLIENT_SECRET`, `TEGEL_AUTH` (default `keycloak`), `TEGEL_
 
 `tegel.dataserver.testing` is also registered as the pytest plugin `tegel`.
 
-- `assert_incarnation(package_root, *, base_url, token, http_client, resource_id, search_field, search_value, positive_fixture, rejected_input, schema_root=None)` checks an incarnation package end to end. It checks the layout, the project file, that the package contains no schema, the profile against its external schema, categorical search fields, the extractor on the positive fixture and the rejected input, the reader's `describe`, and the read API.
+- `assert_incarnation(package_root, *, base_url, token, http_client, resource_id, search_field, search_value, positive_fixture, rejected_input, schema_root=None)` checks an incarnation package end to end. It checks the layout, the project file, that the package contains no schema, the profile against its external schema, that the resource type uses the profile's schema, categorical search fields, the extractor on the positive fixture and the rejected input, the stored row built from its package, the reader's `describe`, and the read API.
 - `assert_incarnation_layout(package_root)` and `assert_incarnation_ships_no_schema(package_root)` run single parts of that check.
 - `assert_read_only_api(base_url, *, token, http_client, resource_id, search_field, search_value)` checks the HTTP API alone.
 - `OIDCIssuer` serves a local discovery document and JWKS on an ephemeral port and signs one token, for tests.

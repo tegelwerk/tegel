@@ -1,10 +1,13 @@
 """Static incarnation checks. The toy package is a filesystem path, not an import."""
 
+import shutil
 from pathlib import Path
 
+import httpx
 import pytest
 
 from tegel.dataserver.testing.incarnation import (
+    assert_incarnation,
     assert_incarnation_profile,
     assert_incarnation_project,
     assert_incarnation_ships_no_schema,
@@ -152,6 +155,37 @@ def test_schema_inside_the_package_is_rejected(tmp_path: Path) -> None:
         assert_incarnation_profile(package, package)
     with pytest.raises(AssertionError, match="schema/record.yaml"):
         assert_incarnation_ships_no_schema(package)
+
+
+def test_assert_incarnation_rejects_schema_mismatch(tmp_path: Path) -> None:
+    package = tmp_path / "toy"
+    shutil.copytree(TOY, package, ignore=shutil.ignore_patterns("__pycache__", ".*"))
+    schemas = tmp_path / "schemas"
+    (schemas / "sample").mkdir(parents=True)
+    (schemas / "sample" / "record.yaml").write_text(
+        _RECORD.format(recorded_range="string", multivalued="false"), encoding="utf-8"
+    )
+    (package / "schema" / "profile.yaml").write_text(
+        _PROFILE.format(search="channel", schema_path="sample/record.yaml"),
+        encoding="utf-8",
+    )
+    with httpx.Client() as client, pytest.raises(AssertionError) as caught:
+        assert_incarnation(
+            package,
+            base_url="http://unused",
+            token="unused",
+            http_client=client,
+            resource_id="unused",
+            search_field="channel",
+            search_value="unused",
+            positive_fixture=package / "missing.npy",
+            rejected_input=package / "missing.txt",
+            schema_root=schemas,
+        )
+    assert str(caught.value) == (
+        "resource type toy.record uses schema https://w3id.org/tegel/toy/record; "
+        "the profile names https://w3id.org/tegel/sample/record"
+    )
 
 
 def _module(root: Path, source: str) -> None:

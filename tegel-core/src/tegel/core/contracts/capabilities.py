@@ -26,10 +26,13 @@ class Principal(BaseModel):
 class Capabilities(BaseModel):
     """What a server implements, returned by ``GET /capabilities``."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
     spec_version: str = SPEC_VERSION
     server_version: str = Field(min_length=1)
     plugins: list[InstalledPlugin] = Field(default_factory=list)
     search_document: str = "ro-crate"
     auth: str = "keycloak"
+    schema_id: str | None = None
+    schema_version: str | None = None
+    class_name: str | None = Field(default=None, alias="class")

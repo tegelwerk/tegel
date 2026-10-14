@@ -74,7 +74,12 @@ def insert_record(
     metadata: dict[str, Any],
     structure_family: str,
 ) -> None:
-    """Write one catalog node. ETL calls this. The read API does not."""
+    """Write one catalog node. ETL calls this. The read API does not.
+
+    ``metadata`` must be the stored row ``{"record": ..., "tegel": ...}``.
+    Build it with ``tegel.core.plugins.catalog_metadata``; the index does not
+    serve any other shape.
+    """
     from tiled.structures.core import StructureFamily
 
     family = StructureFamily(structure_family)
