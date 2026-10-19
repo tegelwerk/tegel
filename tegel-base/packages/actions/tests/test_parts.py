@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tegel.actions.register import readable_roots
+from tegel.actions.parts import readable_roots
 from tegel.actions.staging import StagingError, write_staging
 from tegel.core.contracts.resources import DataDescriptor, StructureFamily
 from tegel.toy.dataserver import ToyReader

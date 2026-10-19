@@ -13,7 +13,7 @@ from typing import Any
 import httpx
 
 from tegel.actions.errorlog import ErrorLog
-from tegel.actions.register import (
+from tegel.actions.parts import (
     PartError,
     RemoteChecker,
     plan_parts,

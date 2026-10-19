@@ -2,7 +2,8 @@
 
 This module and ``staging`` are the only places in actions that build Tiled
 adapters and data sources. A part's structure always comes from Tiled's own
-registration adapter for its media type.
+registration adapter for its media type. The data-source call goes through
+``tegel.register``, which follows the signature of the installed Tiled.
 """
 
 from __future__ import annotations
@@ -269,11 +270,15 @@ def _data_sources(adapter: Any, media_type: str, path: Path, parameters: dict) -
 
     is_directory = path.is_dir()
     if hasattr(adapter, "generate_data_sources"):
-        return adapter.generate_data_sources(
+        from tegel.register.tiled._compat import generate_data_sources
+
+        return generate_data_sources(
+            adapter,
             media_type,
-            lambda found: None if found is None else dataclasses.asdict(found),
             path,
             is_directory,
+            lambda found: None if found is None else dataclasses.asdict(found),
+            parameters,
         )
     return [
         DataSource(

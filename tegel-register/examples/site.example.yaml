@@ -1,0 +1,35 @@
+version: 1
+target:
+  base_uri: http://127.0.0.1:8000/api/v1
+  secret_id: tiled-local
+# readable and landing paths are relative to this file. site check and
+# reference.py use those directories. reference.py does not open target.base_uri.
+readable:
+  # local/real holds the bytes. local/srvview is the symlink Tiled compares
+  # as readable storage.
+  - local: local/real
+    server: local/srvview
+landing:
+  local: local/real/incoming
+  layout: "{protocol}/{sha12}/{name}"
+  globus:
+    collection: dest-collection
+    path: /landing
+sources:
+  lab.tiled:
+    protocol: tiled
+    base_uri: https://tiled.example/api/v1
+    proxy: true
+    secret_id: upstream-tiled
+  lab.globus:
+    protocol: globus
+    collection: src-collection
+    secret_id: globus-example
+  zenodo:
+    protocol: zenodo
+  https:
+    protocol: zenodo
+    host: zenodo.org
+tiled:
+  mimetypes_by_file_ext:
+    .parquet: application/x-parquet

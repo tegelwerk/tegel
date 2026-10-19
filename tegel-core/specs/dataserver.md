@@ -180,7 +180,7 @@ A resource's data is a list of named parts, plus an optional payload. A reader d
 
 At staging, a `file:` part whose `media_type` has a Tiled registration adapter that registers one URI (`DEFAULT_REGISTRATION_ADAPTERS_BY_MIMETYPE` entries with `from_uris`, except `application/octet-stream` and `multipart/*`) becomes an externally managed child node of the resource, keyed by the part name. Its structure comes from that adapter. Its `served_by` is `tiled`. Every other `file:` part is `served_by: tegel` and has no child node. The resource node is a `container` whose metadata is the stored row.
 
-In Tiled 0.2.18 that means:
+In Tiled 0.2.18 and 0.2.19 that means:
 
 | Format | Media type | Served by | Tiled adapter |
 | --- | --- | --- | --- |
@@ -190,9 +190,12 @@ In Tiled 0.2.18 that means:
 | TIFF, JPEG | `image/tiff`, `image/jpeg` | Tiled, `array` | `TiffAdapter`, `JPEGAdapter` |
 | CSV | `text/csv`, `text/csv;header=present` | Tiled, `table` | `CSVAdapter`; reads the file at staging |
 | Excel | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` | Tiled, `container` | `ExcelAdapter`; reads the file at staging |
-| Parquet, Arrow, NetCDF, anything else | | Tegel, bytes | none: Tiled 0.2.18 cannot register these from a URI |
+| Parquet | `application/x-parquet` | Tegel, bytes on 0.2.18; Tiled, `table` from 0.2.19 | `ParquetDatasetAdapter` gains `from_uris` in 0.2.19 |
+| Arrow, NetCDF, anything else | | Tegel, bytes | none: Tiled 0.2.18 and 0.2.19 cannot register these from a URI |
 
-Known limitation: Parquet, Arrow and NetCDF parts are byte parts in 0.4.0, because Tiled 0.2.18's adapters for them have no `from_uris`. Domain formats with no Tiled adapter are byte parts too.
+Known limitation: Arrow and NetCDF parts are byte parts in 0.4.0, because Tiled's adapters for them have no `from_uris`. Parquet follows the installed Tiled: the rule above is evaluated at staging, so the same record stages as a byte part on 0.2.18 and as a `table` node on 0.2.19. Restage after upgrading Tiled to move existing Parquet parts. Domain formats with no Tiled adapter are byte parts too.
+
+Tiled changed the signature of `generate_data_sources` between 0.2.18 and 0.2.19. Staging calls it through `tegel.register.tiled._compat.generate_data_sources`, which reads the installed signature (see [register.md](register.md)).
 
 ### Content URLs
 
