@@ -1,0 +1,24 @@
+id: https://w3id.org/tegel/actionserver/results-profile
+name: action runs
+schema_id: https://w3id.org/tegel/actionserver/run
+schema_version: "1"
+schema_path: run.yaml
+class: ActionRun
+search:
+  - action
+  - action_version
+  - state
+  - principal
+  - request_key
+properties:
+  - action
+  - action_version
+  - state
+  - principal
+  - submitted
+  - ended
+  - quantities
+entity:
+  name: action
+  identifier: run_id
+  dateCreated: submitted

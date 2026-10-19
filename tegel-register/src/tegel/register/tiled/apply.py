@@ -39,14 +39,15 @@ def _create_new(into: Any, node_spec: NodeSpec) -> Any:
     specs = [Spec(spec["name"], spec.get("version")) for spec in node_spec.specs]
     return into.new(
         node_spec.structure_family,
-        [_data_source(source) for source in node_spec.data_sources],
+        [data_source(source) for source in node_spec.data_sources],
         key=node_spec.key,
         metadata=node_spec.metadata,
         specs=specs,
     )
 
 
-def _data_source(raw: dict) -> Any:
+def data_source(raw: dict) -> Any:
+    """A Tiled ``DataSource`` from the dict form ``describe_local`` returns."""
     from tiled.structures.core import StructureFamily
     from tiled.structures.data_source import Asset, DataSource, Management
 

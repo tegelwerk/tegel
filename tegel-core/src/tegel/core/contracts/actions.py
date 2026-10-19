@@ -118,7 +118,11 @@ InputValue = str | list[str]
 
 
 class RunRequest(BaseModel):
-    """Body of ``POST /runs``."""
+    """Body of ``POST /runs`` and ``POST /plans``.
+
+    ``allow_transfer`` accepts a run whose plan moves more data than the server's
+    transfer threshold; without it such a request is refused with the plan.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -126,6 +130,7 @@ class RunRequest(BaseModel):
     inputs: dict[str, InputValue] = Field(default_factory=dict)
     parameters: dict[str, Any] = Field(default_factory=dict)
     force: bool = False
+    allow_transfer: bool = False
 
 
 class BatchRequest(BaseModel):
@@ -137,6 +142,15 @@ class BatchRequest(BaseModel):
     inputs: dict[str, InputValue] = Field(default_factory=dict)
     parameters: dict[str, Any] = Field(default_factory=dict)
     force: bool = False
+    allow_transfer: bool = False
+
+
+class RunPhase(StrEnum):
+    """Where a running run is: reading inputs, computing, or storing outputs."""
+
+    stage = "stage"
+    work = "work"
+    destage = "destage"
 
 
 class RunState(StrEnum):
@@ -170,6 +184,7 @@ class Run(BaseModel):
     id: str = Field(min_length=1)
     action: str = Field(min_length=1)
     state: RunState
+    phase: RunPhase | None = None
     inputs: dict[str, InputValue] = Field(default_factory=dict)
     parameters: dict[str, Any] = Field(default_factory=dict)
     principal: str = Field(min_length=1)
@@ -191,7 +206,49 @@ class Run(BaseModel):
             raise ValueError("a failed run says why")
         if self.result and self.state not in FINAL_STATES:
             raise ValueError("only a finished run has a result")
+        if self.phase is not None and self.state is not RunState.running:
+            raise ValueError("only a running run has a phase")
         return self
+
+
+class InputRoute(StrEnum):
+    """How the stage phase reads one input."""
+
+    local = "local"  # a file under the server's readable storage, or a node in its own catalog
+    tiled = "tiled"  # a node on another Tiled server, read through its routes
+    bytes = "bytes"  # a byte part on another Tegel server
+    bind = "bind"  # bound first by tegel-register (specs/register.md)
+
+
+class InputPlan(BaseModel):
+    """What staging one input will cost."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    port: str = Field(min_length=1)
+    uri: str = Field(min_length=1)
+    route: InputRoute
+    source: str | None = None
+    size_bytes: int | None = Field(default=None, ge=0)
+    moves_bytes: bool = False
+    seconds: float | None = Field(default=None, ge=0)
+    throughput_measured: bool = False
+    notes: list[str] = Field(default_factory=list)
+
+
+class Plan(BaseModel):
+    """Response of ``POST /plans``, and the body of a ``409`` from ``POST /runs``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: str = Field(min_length=1)
+    inputs: list[InputPlan] = Field(default_factory=list)
+    moves_bytes: int = Field(default=0, ge=0)
+    seconds: float | None = Field(default=None, ge=0)
+    threshold_seconds: float = Field(ge=0)
+    transfer_first: bool = False
+    cached: str | None = None
+    warnings: list[str] = Field(default_factory=list)
 
 
 class Batch(BaseModel):

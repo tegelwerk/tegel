@@ -232,6 +232,17 @@
           "state": {
             "$ref": "#/$defs/RunState"
           },
+          "phase": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/RunPhase"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
           "inputs": {
             "additionalProperties": {
               "anyOf": [
@@ -339,6 +350,16 @@
         "title": "Run",
         "type": "object"
       },
+      "RunPhase": {
+        "description": "Where a running run is: reading inputs, computing, or storing outputs.",
+        "enum": [
+          "stage",
+          "work",
+          "destage"
+        ],
+        "title": "RunPhase",
+        "type": "string"
+      },
       "RunState": {
         "enum": [
           "queued",
@@ -414,6 +435,11 @@
         "default": false,
         "title": "Force",
         "type": "boolean"
+      },
+      "allow_transfer": {
+        "default": false,
+        "title": "Allow Transfer",
+        "type": "boolean"
       }
     },
     "required": [
@@ -422,8 +448,278 @@
     "title": "BatchRequest",
     "type": "object"
   },
+  "InputPlan": {
+    "$defs": {
+      "InputRoute": {
+        "description": "How the stage phase reads one input.",
+        "enum": [
+          "local",
+          "tiled",
+          "bytes",
+          "bind"
+        ],
+        "title": "InputRoute",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "description": "What staging one input will cost.",
+    "properties": {
+      "port": {
+        "minLength": 1,
+        "title": "Port",
+        "type": "string"
+      },
+      "uri": {
+        "minLength": 1,
+        "title": "Uri",
+        "type": "string"
+      },
+      "route": {
+        "$ref": "#/$defs/InputRoute"
+      },
+      "source": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Source"
+      },
+      "size_bytes": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Size Bytes"
+      },
+      "moves_bytes": {
+        "default": false,
+        "title": "Moves Bytes",
+        "type": "boolean"
+      },
+      "seconds": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Seconds"
+      },
+      "throughput_measured": {
+        "default": false,
+        "title": "Throughput Measured",
+        "type": "boolean"
+      },
+      "notes": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Notes",
+        "type": "array"
+      }
+    },
+    "required": [
+      "port",
+      "uri",
+      "route"
+    ],
+    "title": "InputPlan",
+    "type": "object"
+  },
+  "Plan": {
+    "$defs": {
+      "InputPlan": {
+        "additionalProperties": false,
+        "description": "What staging one input will cost.",
+        "properties": {
+          "port": {
+            "minLength": 1,
+            "title": "Port",
+            "type": "string"
+          },
+          "uri": {
+            "minLength": 1,
+            "title": "Uri",
+            "type": "string"
+          },
+          "route": {
+            "$ref": "#/$defs/InputRoute"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Source"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Size Bytes"
+          },
+          "moves_bytes": {
+            "default": false,
+            "title": "Moves Bytes",
+            "type": "boolean"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seconds"
+          },
+          "throughput_measured": {
+            "default": false,
+            "title": "Throughput Measured",
+            "type": "boolean"
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Notes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "port",
+          "uri",
+          "route"
+        ],
+        "title": "InputPlan",
+        "type": "object"
+      },
+      "InputRoute": {
+        "description": "How the stage phase reads one input.",
+        "enum": [
+          "local",
+          "tiled",
+          "bytes",
+          "bind"
+        ],
+        "title": "InputRoute",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Response of ``POST /plans``, and the body of a ``409`` from ``POST /runs``.",
+    "properties": {
+      "action": {
+        "minLength": 1,
+        "title": "Action",
+        "type": "string"
+      },
+      "inputs": {
+        "items": {
+          "$ref": "#/$defs/InputPlan"
+        },
+        "title": "Inputs",
+        "type": "array"
+      },
+      "moves_bytes": {
+        "default": 0,
+        "minimum": 0,
+        "title": "Moves Bytes",
+        "type": "integer"
+      },
+      "seconds": {
+        "anyOf": [
+          {
+            "minimum": 0,
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Seconds"
+      },
+      "threshold_seconds": {
+        "minimum": 0,
+        "title": "Threshold Seconds",
+        "type": "number"
+      },
+      "transfer_first": {
+        "default": false,
+        "title": "Transfer First",
+        "type": "boolean"
+      },
+      "cached": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Cached"
+      },
+      "warnings": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Warnings",
+        "type": "array"
+      }
+    },
+    "required": [
+      "action",
+      "threshold_seconds"
+    ],
+    "title": "Plan",
+    "type": "object"
+  },
   "Run": {
     "$defs": {
+      "RunPhase": {
+        "description": "Where a running run is: reading inputs, computing, or storing outputs.",
+        "enum": [
+          "stage",
+          "work",
+          "destage"
+        ],
+        "title": "RunPhase",
+        "type": "string"
+      },
       "RunState": {
         "enum": [
           "queued",
@@ -450,6 +746,17 @@
       },
       "state": {
         "$ref": "#/$defs/RunState"
+      },
+      "phase": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/RunPhase"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null
       },
       "inputs": {
         "additionalProperties": {
@@ -560,7 +867,7 @@
   },
   "RunRequest": {
     "additionalProperties": false,
-    "description": "Body of ``POST /runs``.",
+    "description": "Body of ``POST /runs`` and ``POST /plans``.\n\n``allow_transfer`` accepts a run whose plan moves more data than the server's\ntransfer threshold; without it such a request is refused with the plan.",
     "properties": {
       "action": {
         "minLength": 1,
@@ -592,6 +899,11 @@
       "force": {
         "default": false,
         "title": "Force",
+        "type": "boolean"
+      },
+      "allow_transfer": {
+        "default": false,
+        "title": "Allow Transfer",
         "type": "boolean"
       }
     },

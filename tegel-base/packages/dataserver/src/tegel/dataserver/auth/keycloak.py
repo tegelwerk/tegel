@@ -57,7 +57,7 @@ class KeycloakAuth:
         subject = claims.get("sub")
         if not isinstance(subject, str) or not subject:
             raise AuthenticationError("Authentication required")
-        return Principal(subject=subject)
+        return Principal(subject=subject, scopes=_scopes(claims))
 
     def _signing_key(self, token: str) -> Any:
         if self._jwks is None:
@@ -99,3 +99,11 @@ def _bearer(authorization: str | None) -> str:
     if scheme.lower() != "bearer" or not token.strip():
         raise AuthenticationError("Authentication required")
     return token.strip()
+
+
+def _scopes(claims: dict[str, Any]) -> list[str]:
+    """OAuth scopes from the space-separated ``scope`` claim (RFC 8693 section 4.2)."""
+    found = claims.get("scope")
+    if not isinstance(found, str):
+        return []
+    return sorted({item for item in found.split() if item})
