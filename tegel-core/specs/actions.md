@@ -39,7 +39,7 @@ First it loads the profile at `TEGEL_PROFILE` under `TEGEL_SCHEMA_ROOT` and its 
 
 ### Parts
 
-`tegel.actions.register` is the module that builds Tiled adapters and data sources. For each record:
+`tegel.actions.parts` is the module that builds Tiled adapters and data sources. For each record:
 
 1. Staging builds the `Resource` the server would see from the row and calls `describe_parts` (`tegel.core.plugins`): the first reader whose `validate` is true, then its `describe`. The resource's id is provisional at this stage: the record's identifier value, or the source file's stem when there is none, with uri `urn:tegel:staging/<id>`. No reader, a reader that raises, and an invalid `DataDescriptor` (including a 0.3 descriptor with top-level `family`) are `parts` errors.
 2. A `file:` part must lie under a readable root; otherwise the message names the path and the roots.

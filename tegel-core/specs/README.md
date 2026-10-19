@@ -48,6 +48,7 @@ The current version is `0.4.0`. Incarnations declare the `SPEC_VERSION` they wer
 - [actionserver.md](actionserver.md) — action server: action cards, runs, HTTP API, tokens, results
 - [plugins.md](plugins.md) — entry points and what an incarnation provides
 - [actions.md](actions.md) — reference catalog pipeline: staging, merge, refresh
+- [register.md](register.md) — tegel-register: binding a URI as a Tiled node, modes, plan size
 - [prompts/dataserver.md](prompts/dataserver.md) — agent procedure for one data-server incarnation
 - [dash.md](dash.md) — dashboard
 - [interfaces.md](interfaces.md) — YAML procedures

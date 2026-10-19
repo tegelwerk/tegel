@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tegel-register"
+version = "0.1.0"
+description = "Register a URI as a node on a Tiled server, and plan what that costs."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+tiled = ["tiled[client]>=0.2.18,<0.3", "pyyaml>=6"]
+server = ["tiled[server]>=0.2.18,<0.3", "pyyaml>=6"]
+globus = ["globus-sdk>=3.40", "pyyaml>=6"]
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+    "pyyaml>=6",
+    "tiled[all]>=0.2.18,<0.3",
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "globus-sdk>=3.40",
+]
+
+[project.scripts]
+tegel-register = "tegel.register.cli:main"
+
+[project.entry-points."tegel.binders"]
+file = "tegel.register.binders.file:FileBinder"
+tiled = "tegel.register.binders.tiled:TiledBinder"
+globus = "tegel.register.binders.globus:GlobusBinder"
+zenodo = "tegel.register.binders.zenodo:ZenodoBinder"
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/tegel"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "tests", "examples", "SCHEMES.md", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# The historical rule set of this code: pycodestyle errors and pyflakes. One-line statements
+# are an existing style.
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E701", "E702"]
