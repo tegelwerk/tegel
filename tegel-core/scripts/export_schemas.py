@@ -13,6 +13,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from tegel.core.contracts.actions import (  # noqa: E402
+    ActionCard,
+    ActionPort,
+    Batch,
+    BatchRequest,
+    Run,
+    RunRequest,
+)
 from tegel.core.contracts.capabilities import Capabilities, InstalledPlugin, Principal  # noqa: E402
 from tegel.core.contracts.provenance import Provenance  # noqa: E402
 from tegel.core.contracts.resources import (  # noqa: E402
@@ -33,6 +41,12 @@ from tegel.core.plugins import ProcessedDataPackage  # noqa: E402
 from tegel.core.version import SPEC_VERSION  # noqa: E402
 
 MODELS = (
+    ActionCard,
+    ActionPort,
+    Batch,
+    BatchRequest,
+    Run,
+    RunRequest,
     Capabilities,
     InstalledPlugin,
     Principal,

@@ -1,4 +1,606 @@
 {
+  "ActionCard": {
+    "$defs": {
+      "ActionPort": {
+        "additionalProperties": false,
+        "description": "One named input or output of an action.",
+        "properties": {
+          "name": {
+            "minLength": 1,
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+            "title": "Name",
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/$defs/PortKind"
+          },
+          "description": {
+            "default": "",
+            "title": "Description",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Unit"
+          },
+          "optional": {
+            "default": false,
+            "title": "Optional",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "kind"
+        ],
+        "title": "ActionPort",
+        "type": "object"
+      },
+      "PortKind": {
+        "description": "What an input or output port carries.",
+        "enum": [
+          "structure",
+          "trajectory",
+          "table",
+          "array",
+          "quantity",
+          "json",
+          "file",
+          "selection"
+        ],
+        "title": "PortKind",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Everything a client needs to call an action.",
+    "properties": {
+      "id": {
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "version": {
+        "minLength": 1,
+        "title": "Version",
+        "type": "string"
+      },
+      "title": {
+        "default": "",
+        "title": "Title",
+        "type": "string"
+      },
+      "description": {
+        "default": "",
+        "title": "Description",
+        "type": "string"
+      },
+      "inputs": {
+        "items": {
+          "$ref": "#/$defs/ActionPort"
+        },
+        "title": "Inputs",
+        "type": "array"
+      },
+      "outputs": {
+        "items": {
+          "$ref": "#/$defs/ActionPort"
+        },
+        "title": "Outputs",
+        "type": "array"
+      },
+      "parameters": {
+        "additionalProperties": true,
+        "title": "Parameters",
+        "type": "object"
+      },
+      "scope": {
+        "default": "actions:run",
+        "minLength": 1,
+        "title": "Scope",
+        "type": "string"
+      },
+      "resources": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Resources",
+        "type": "array"
+      },
+      "validity": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Validity"
+      },
+      "software": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Software",
+        "type": "array"
+      },
+      "license": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "License"
+      }
+    },
+    "required": [
+      "id",
+      "version"
+    ],
+    "title": "ActionCard",
+    "type": "object"
+  },
+  "ActionPort": {
+    "$defs": {
+      "PortKind": {
+        "description": "What an input or output port carries.",
+        "enum": [
+          "structure",
+          "trajectory",
+          "table",
+          "array",
+          "quantity",
+          "json",
+          "file",
+          "selection"
+        ],
+        "title": "PortKind",
+        "type": "string"
+      }
+    },
+    "additionalProperties": false,
+    "description": "One named input or output of an action.",
+    "properties": {
+      "name": {
+        "minLength": 1,
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+        "title": "Name",
+        "type": "string"
+      },
+      "kind": {
+        "$ref": "#/$defs/PortKind"
+      },
+      "description": {
+        "default": "",
+        "title": "Description",
+        "type": "string"
+      },
+      "unit": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Unit"
+      },
+      "optional": {
+        "default": false,
+        "title": "Optional",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "name",
+      "kind"
+    ],
+    "title": "ActionPort",
+    "type": "object"
+  },
+  "Batch": {
+    "$defs": {
+      "Run": {
+        "description": "One execution of one action version, as ``GET /runs/{run}`` returns it.",
+        "properties": {
+          "id": {
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "action": {
+            "minLength": 1,
+            "title": "Action",
+            "type": "string"
+          },
+          "state": {
+            "$ref": "#/$defs/RunState"
+          },
+          "inputs": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              ]
+            },
+            "title": "Inputs",
+            "type": "object"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "title": "Parameters",
+            "type": "object"
+          },
+          "principal": {
+            "minLength": 1,
+            "title": "Principal",
+            "type": "string"
+          },
+          "batch": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Batch"
+          },
+          "submitted": {
+            "title": "Submitted",
+            "type": "string"
+          },
+          "started": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Started"
+          },
+          "ended": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ended"
+          },
+          "cached": {
+            "default": false,
+            "title": "Cached",
+            "type": "boolean"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Result"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Error"
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "state",
+          "principal",
+          "submitted"
+        ],
+        "title": "Run",
+        "type": "object"
+      },
+      "RunState": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "RunState",
+        "type": "string"
+      }
+    },
+    "description": "Response of ``POST /batches``.",
+    "properties": {
+      "batch": {
+        "minLength": 1,
+        "title": "Batch",
+        "type": "string"
+      },
+      "action": {
+        "minLength": 1,
+        "title": "Action",
+        "type": "string"
+      },
+      "runs": {
+        "items": {
+          "$ref": "#/$defs/Run"
+        },
+        "title": "Runs",
+        "type": "array"
+      }
+    },
+    "required": [
+      "batch",
+      "action",
+      "runs"
+    ],
+    "title": "Batch",
+    "type": "object"
+  },
+  "BatchRequest": {
+    "additionalProperties": false,
+    "description": "Body of ``POST /batches``: exactly one non-selection input is a list.",
+    "properties": {
+      "action": {
+        "minLength": 1,
+        "title": "Action",
+        "type": "string"
+      },
+      "inputs": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "title": "Inputs",
+        "type": "object"
+      },
+      "parameters": {
+        "additionalProperties": true,
+        "title": "Parameters",
+        "type": "object"
+      },
+      "force": {
+        "default": false,
+        "title": "Force",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "title": "BatchRequest",
+    "type": "object"
+  },
+  "Run": {
+    "$defs": {
+      "RunState": {
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed",
+          "cancelled"
+        ],
+        "title": "RunState",
+        "type": "string"
+      }
+    },
+    "description": "One execution of one action version, as ``GET /runs/{run}`` returns it.",
+    "properties": {
+      "id": {
+        "minLength": 1,
+        "title": "Id",
+        "type": "string"
+      },
+      "action": {
+        "minLength": 1,
+        "title": "Action",
+        "type": "string"
+      },
+      "state": {
+        "$ref": "#/$defs/RunState"
+      },
+      "inputs": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "title": "Inputs",
+        "type": "object"
+      },
+      "parameters": {
+        "additionalProperties": true,
+        "title": "Parameters",
+        "type": "object"
+      },
+      "principal": {
+        "minLength": 1,
+        "title": "Principal",
+        "type": "string"
+      },
+      "batch": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Batch"
+      },
+      "submitted": {
+        "title": "Submitted",
+        "type": "string"
+      },
+      "started": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Started"
+      },
+      "ended": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Ended"
+      },
+      "cached": {
+        "default": false,
+        "title": "Cached",
+        "type": "boolean"
+      },
+      "result": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Result"
+      },
+      "error": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "title": "Error"
+      }
+    },
+    "required": [
+      "id",
+      "action",
+      "state",
+      "principal",
+      "submitted"
+    ],
+    "title": "Run",
+    "type": "object"
+  },
+  "RunRequest": {
+    "additionalProperties": false,
+    "description": "Body of ``POST /runs``.",
+    "properties": {
+      "action": {
+        "minLength": 1,
+        "title": "Action",
+        "type": "string"
+      },
+      "inputs": {
+        "additionalProperties": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "title": "Inputs",
+        "type": "object"
+      },
+      "parameters": {
+        "additionalProperties": true,
+        "title": "Parameters",
+        "type": "object"
+      },
+      "force": {
+        "default": false,
+        "title": "Force",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "action"
+    ],
+    "title": "RunRequest",
+    "type": "object"
+  },
   "Capabilities": {
     "$defs": {
       "InstalledPlugin": {
@@ -93,6 +695,13 @@
         ],
         "default": null,
         "title": "Class"
+      },
+      "services": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Services",
+        "type": "array"
       }
     },
     "required": [
@@ -135,6 +744,13 @@
         "minLength": 1,
         "title": "Subject",
         "type": "string"
+      },
+      "scopes": {
+        "items": {
+          "type": "string"
+        },
+        "title": "Scopes",
+        "type": "array"
       }
     },
     "required": [
