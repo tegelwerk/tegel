@@ -17,8 +17,9 @@ The reference data server reads these entry points, the search profile, and the 
 | `tegel.storage` | a storage class | data server, ETL |
 | `tegel.auth` | an auth provider class | data server |
 | `tegel.index` | an index class | data server |
+| `tegel.actions` | an action (`card` and `run`) | action server |
 
-Each entry point loads a class, except `tegel.resource_types`, which loads a `ResourceType` value. Classes construct with no arguments. A failure at load time is a contract error and stops startup. The server does not skip a broken plugin. An entry point in a group not listed here is not loaded.
+Each entry point loads a class, except `tegel.resource_types`, which loads a `ResourceType` value, and `tegel.actions`, which loads an action object (see [actionserver.md](actionserver.md#registration)). Classes construct with no arguments. A failure at load time is a contract error and stops startup. The server does not skip a broken plugin. An entry point in a group not listed here is not loaded.
 
 `tegel-dataserver` registers `keycloak` on `tegel.auth`, `filesystem` on `tegel.storage`, and `tiled` on `tegel.index`.
 

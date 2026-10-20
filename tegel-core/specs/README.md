@@ -45,6 +45,7 @@ The current version is `0.4.0`. Incarnations declare the `SPEC_VERSION` they wer
 ## Documents
 
 - [dataserver.md](dataserver.md) — data server: read API, resource model, profiles, configuration
+- [actionserver.md](actionserver.md) — action server: action cards, runs, HTTP API, tokens, results
 - [plugins.md](plugins.md) — entry points and what an incarnation provides
 - [actions.md](actions.md) — reference catalog pipeline: staging, merge, refresh
 - [prompts/dataserver.md](prompts/dataserver.md) — agent procedure for one data-server incarnation

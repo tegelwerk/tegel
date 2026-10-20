@@ -1,5 +1,20 @@
-"""Wire contracts for the read-only data server."""
+"""Wire contracts for the read-only data server and the action server."""
 
+from tegel.core.contracts.actions import (
+    ActionCard,
+    ActionPort,
+    Batch,
+    BatchRequest,
+    PortKind,
+    Run,
+    RunRequest,
+    RunState,
+    batch_port,
+    can_transition,
+    check_inputs,
+    request_key,
+    split_ref,
+)
 from tegel.core.contracts.capabilities import Capabilities, InstalledPlugin, Principal
 from tegel.core.contracts.provenance import Provenance
 from tegel.core.contracts.resources import (
@@ -37,6 +52,19 @@ from tegel.core.contracts.types import (
 )
 
 __all__ = [
+    "ActionCard",
+    "ActionPort",
+    "Batch",
+    "BatchRequest",
+    "PortKind",
+    "Run",
+    "RunRequest",
+    "RunState",
+    "batch_port",
+    "can_transition",
+    "check_inputs",
+    "request_key",
+    "split_ref",
     "ENVELOPE_KEY",
     "RECORD_KEY",
     "RO_CRATE",

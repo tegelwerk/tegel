@@ -21,6 +21,7 @@ class Principal(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     subject: str = Field(min_length=1)
+    scopes: list[str] = Field(default_factory=list)
 
 
 class Capabilities(BaseModel):
@@ -36,3 +37,4 @@ class Capabilities(BaseModel):
     schema_id: str | None = None
     schema_version: str | None = None
     class_name: str | None = Field(default=None, alias="class")
+    services: list[str] = Field(default_factory=lambda: ["read"])
