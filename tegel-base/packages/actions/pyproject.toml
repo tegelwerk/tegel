@@ -12,6 +12,7 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "tegel-core",
+    "tegel-register[tiled]",
     "httpx",
     "prefect>=3,<4",
     "tiled[server,formats]>=0.2.18",

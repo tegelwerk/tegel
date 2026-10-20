@@ -33,6 +33,7 @@ class OIDCIssuer:
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self.issued: IssuedToken | None = None
+        self._issuer = ""
 
     def __enter__(self) -> IssuedToken:
         public = json.loads(RSAAlgorithm.to_jwk(self._key.public_key()))
@@ -74,20 +75,10 @@ class OIDCIssuer:
         holder["issuer"] = issuer
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
-        now = int(time.time())
+        holder["audience"] = "tegel"
+        self._issuer = issuer
         audience = "tegel"
-        token = jwt.encode(
-            {
-                "iss": issuer,
-                "aud": audience,
-                "sub": "user-1",
-                "iat": now,
-                "exp": now + self._lifetime,
-            },
-            self._key,
-            algorithm="RS256",
-            headers={"kid": "test"},
-        )
+        token = self.sign()
         self.issued = IssuedToken(
             issuer=issuer,
             audience=audience,
@@ -96,6 +87,26 @@ class OIDCIssuer:
             token=token,
         )
         return self.issued
+
+    def sign(
+        self,
+        *,
+        subject: str = "user-1",
+        scope: str | None = None,
+        audience: str = "tegel",
+    ) -> str:
+        """Sign another token with this issuer's key. ``scope`` is the space-separated claim."""
+        now = int(time.time())
+        claims: dict[str, object] = {
+            "iss": self._issuer,
+            "aud": audience,
+            "sub": subject,
+            "iat": now,
+            "exp": now + self._lifetime,
+        }
+        if scope is not None:
+            claims["scope"] = scope
+        return jwt.encode(claims, self._key, algorithm="RS256", headers={"kid": "test"})
 
     def __exit__(self, *exc: object) -> None:
         if self._server is not None:

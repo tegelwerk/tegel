@@ -18,6 +18,8 @@ from tegel.core.contracts.actions import (  # noqa: E402
     ActionPort,
     Batch,
     BatchRequest,
+    InputPlan,
+    Plan,
     Run,
     RunRequest,
 )
@@ -45,6 +47,8 @@ MODELS = (
     ActionPort,
     Batch,
     BatchRequest,
+    InputPlan,
+    Plan,
     Run,
     RunRequest,
     Capabilities,

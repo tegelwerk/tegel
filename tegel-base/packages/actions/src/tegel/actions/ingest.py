@@ -14,8 +14,8 @@ from prefect import flow
 from prefect.deployments import run_deployment
 
 from tegel.actions.errorlog import FILENAME as ERROR_LOG
+from tegel.actions.parts import readable_roots
 from tegel.actions.refresh import refresh_catalog
-from tegel.actions.register import readable_roots
 from tegel.actions.staging import (
     MODES,
     StagingError,

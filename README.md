@@ -12,15 +12,19 @@ A resource's data is a list of named parts. Staging asks the incarnation's reade
 
 - [`tegel-core`](tegel-core/README.md) — the specification in [`tegel-core/specs`](tegel-core/specs/README.md), pydantic wire contracts, the plugin registry and checks, the profile and schema loader, and the read-only `DataClient`.
 - [`tegel-base`](tegel-base/README.md) — the reference data server (Tiled with the Tegel read API and Keycloak auth), the Prefect catalog pipeline, an empty dashboard package, and the container deployment in [`tegel-base/deploy`](tegel-base/deploy/README.md).
+- [`tegel-actionserver`](tegel-actionserver/README.md) — the standalone action server: runs registered actions in three phases (stage, work, destage), plans transfers before it moves data, and serves every run as a resource with the data server read API. [`examples/battery`](tegel-actionserver/examples/battery/README.md) ports the battery-materials actions.
+- [`tegel-register`](tegel-register/README.md) — binds a URI (file, another Tiled server, Globus, Zenodo) as a node on a Tiled server Tegel controls, so actions can compute on remote data. `plan()` reports the bytes a bind would move before it moves them.
 - [`tegel-base/examples/toy`](tegel-base/examples/toy/README.md) — a synthetic incarnation that the tests run the reference server against. Its schema is in `tegel-base/examples/schemas`.
 
 The SSRL XFM incarnation is [tegelwerk/xfm_ssrl_tegel](https://github.com/tegelwerk/xfm_ssrl_tegel).
 
 ## Development
 
-Each directory is its own uv project. `tegel-base` uses `../tegel-core` as an editable path source.
+Each directory is its own uv project. `tegel-base` uses `../tegel-core` and `../tegel-register` as editable path sources.
 
 ```bash
 cd tegel-core && uv sync --group dev && uv run pytest
 cd tegel-base && uv sync && uv run pytest
+cd tegel-register && uv sync --group dev && uv run pytest
+cd tegel-actionserver && uv sync --group dev && uv run pytest
 ```

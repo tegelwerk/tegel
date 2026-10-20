@@ -27,11 +27,15 @@ def _sources(adapter, mimetype: str, path: Path, is_directory: bool, parameters:
     from tiled.utils import ensure_uri
 
     if hasattr(adapter, "generate_data_sources"):
-        return adapter.generate_data_sources(
+        from tegel.register.tiled._compat import generate_data_sources
+
+        return generate_data_sources(
+            adapter,
             mimetype,
-            lambda s: None if s is None else dataclasses.asdict(s),
             path,
             is_directory,
+            lambda s: None if s is None else dataclasses.asdict(s),
+            parameters,
         )
     return [
         DataSource(
@@ -80,6 +84,8 @@ def served(tmp_path_factory):
         ("csv", "text/csv;header=present", root / "s.csv", False, {}),
         ("tiff", "image/tiff", root / "i.tif", False, {}),
     ]
+    if hasattr(ADAPTERS["application/x-parquet"], "from_uris"):  # Tiled 0.2.19 and later
+        cases.append(("parquet", "application/x-parquet", root / "t.parquet", False, {}))
     tree = from_uri(
         f"sqlite:///{root / 'catalog.db'}",
         init_if_not_exists=True,
@@ -178,10 +184,28 @@ def test_metadata_body_shape(served) -> None:
     assert table["columns"] == ["x", "y"]
 
 
-def test_parquet_has_no_registration_from_a_uri() -> None:
+def test_parquet_registers_from_a_uri_only_from_tiled_0_2_19(served) -> None:
+    """Tiled 0.2.18 has no URI registration for Parquet, so staging serves it as bytes.
+
+    From 0.2.19 ``tiled_registers`` sees ``from_uris`` and the part becomes a table node.
+    """
+    import tiled
     from tiled.mimetypes import DEFAULT_REGISTRATION_ADAPTERS_BY_MIMETYPE as ADAPTERS
 
-    assert not hasattr(ADAPTERS["application/x-parquet"], "from_uris")
+    from tegel.actions.parts import tiled_registers
+
+    client, found, _ = served
+    newer = tuple(int(p) for p in tiled.__version__.split(".")[:3]) >= (0, 2, 19)
+    assert hasattr(ADAPTERS["application/x-parquet"], "from_uris") is newer
+    assert tiled_registers("application/x-parquet") is newer
+    if not newer:
+        return
+    assert found["parquet"][1] == "table"
+    response = client.get(
+        "/api/v1/table/full/res/parquet", params={"column": "y", "format": "text/csv"}
+    )
+    assert response.status_code == 200
+    assert response.text.split() == ["y", "3.0", "4.0"]
 
 
 def test_registration_outside_readable_storage_fails_on_read(tmp_path: Path) -> None:

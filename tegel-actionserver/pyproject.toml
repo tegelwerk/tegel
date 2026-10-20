@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tegel-actionserver"
+version = "0.1.0"
+description = "Standalone Tegel action server: runs registered actions and serves their results."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = [
+    "tegel-core",
+    "tegel-dataserver",
+    "tegel-register[tiled]",
+    "tiled[server,formats]>=0.2.18,<0.3",
+    "fastapi",
+    "uvicorn",
+    "httpx",
+    "jsonschema>=4",
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "pyyaml>=6",
+]
+
+[project.scripts]
+tegel-actionserver = "tegel.actionserver.cli:main"
+
+[project.entry-points."tegel.auth"]
+apikey = "tegel.actionserver.auth:ApiKeyAuth"
+
+[project.entry-points."tegel.actions"]
+array-stats = "tegel.actionserver.builtin:array_stats"
+table-summary = "tegel.actionserver.builtin:table_summary"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.8", "h5py"]
+
+[tool.uv.sources]
+tegel-core = { path = "../tegel-core", editable = true }
+tegel-register = { path = "../tegel-register", editable = true }
+tegel-dataserver = { path = "../tegel-base/packages/dataserver", editable = true }
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/tegel"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.hatch.build.targets.sdist]
+only-include = ["src", "tests", "examples", "README.md", "LICENSE", "pyproject.toml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tegel"]

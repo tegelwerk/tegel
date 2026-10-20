@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling>=1.26"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tegel-battery-actions"
+version = "0.1.0"
+description = "Example incarnation actions for battery materials: XRD, ASE relax/MD, MSD diffusion."
+readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+dependencies = ["tegel-actionserver", "numpy", "pandas", "scipy", "pymatgen", "ase"]
+
+[project.optional-dependencies]
+mace = ["mace-torch"]
+
+[project.entry-points."tegel.actions"]
+ase-md = "tegel.battery.atomistic:md"
+ase-relax = "tegel.battery.atomistic:relax"
+transport-msd = "tegel.battery.transport:msd_diffusion"
+xrd-match = "tegel.battery.structures:xrd_match"
+xrd-powder = "tegel.battery.structures:xrd_powder"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv.sources]
+tegel-actionserver = { path = "../..", editable = true }
+tegel-core = { path = "../../../tegel-core", editable = true }
+tegel-register = { path = "../../../tegel-register", editable = true }
+tegel-dataserver = { path = "../../../tegel-base/packages/dataserver", editable = true }
+
+[tool.hatch.build.targets.wheel]
+only-include = ["src/tegel"]
+
+[tool.hatch.build.targets.wheel.sources]
+"src" = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

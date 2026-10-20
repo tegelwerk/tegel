@@ -1,0 +1,68 @@
+id: https://w3id.org/tegel/actionserver/run
+name: tegel_action_run
+version: "1"
+description: >-
+  One finished run of a registered action. The record is the run; its outputs
+  are the resource's data parts and its RO-Crate is the payload.
+slots:
+  run_id:
+    range: string
+    identifier: true
+  action:
+    range: string
+    description: the action id
+  action_version:
+    range: string
+  action_ref:
+    range: string
+    description: id@version
+  state:
+    range: string
+    description: succeeded or failed
+  principal:
+    range: string
+    description: subject of the caller that submitted the run
+  submitted:
+    range: datetime
+  started:
+    range: datetime
+  ended:
+    range: datetime
+  request_key:
+    range: string
+  error:
+    range: string
+  inputs:
+    range: string
+    description: input URIs by port name (a JSON object)
+  parameters:
+    range: string
+    description: validated parameters (a JSON object)
+  quantities:
+    range: string
+    description: >-
+      quantity outputs by port name, each with numeric_value, unit and optionally
+      uncertainty, method and conditions (a JSON object)
+  outputs:
+    range: string
+    multivalued: true
+    description: output ports this run produced
+classes:
+  ActionRun:
+    tree_root: true
+    slots:
+      - run_id
+      - action
+      - action_version
+      - action_ref
+      - state
+      - principal
+      - submitted
+      - started
+      - ended
+      - request_key
+      - error
+      - inputs
+      - parameters
+      - quantities
+      - outputs
