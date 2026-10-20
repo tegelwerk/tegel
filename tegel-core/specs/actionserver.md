@@ -120,10 +120,10 @@ Routes are relative to the server's configured base URL. Every route asks the ac
 | `GET /actions/{id}` | `actions:read` | the current `ActionCard` for `id` |
 | `POST /plans` | the card's `scope` | `Plan`; nothing is queued |
 | `POST /runs` | the card's `scope` | `202` and a `Run` in state `queued` (or `succeeded` when cached); `409` with the plan when `transfer_first` and not `allow_transfer` |
-| `POST /batches` | the card's `scope` | `202` and a `Batch`: one run per URI of the one input given as a list |
+| `POST /batches` | the card's `scope` | `202` and a `Batch`: one run per URI of the one input given as a list; all or nothing, so a refused item (`400`, `403`, `409`, named by index) queues no run |
 | `GET /runs` | `actions:read` | list of `Run`, newest first; filters `action`, `state`, `batch`, `limit` |
 | `GET /runs/{run}` | `actions:read` | `Run` |
-| `POST /runs/{run}/wait?timeout=` | `actions:read` | `Run`, once it is final or the timeout (at most 600 s) passes |
+| `POST /runs/{run}/wait?timeout=` | `actions:read` | `Run`, once it is final or the timeout (at most 600 s) passes; a waiting request holds no worker |
 | `DELETE /runs/{run}` | the card's `scope` | `Run` in state `cancelled`; `409` when the run is not `queued` |
 
 `GET /capabilities` needs any accepted token; it reports `services` `["read", "actions"]` and the results profile's schema. `GET /healthz` needs none. Every other route not in this table is the results read API, which needs `actions:read`. The data server's `POST /refresh-catalog` needs `actions:admin` on an action server.
@@ -162,6 +162,8 @@ An input is a URI. Staging reads it when the run starts, by one of four routes:
 
 What a port receives depends on its kind: `array` an n-dimensional array, `table` a data frame, `json` and `quantity` parsed JSON (a Tiled node's metadata for a `json` port), and `structure`, `trajectory` and `file` a local path. An array file must be `.npy`; a table file `.parquet` or `.csv`. A `selection` port receives a list.
 
+`TEGEL_INPUT_ORIGINS`, when set, lists the only other origins the server will read inputs from; any other http(s) input fails the run, and its plan says why. Unset, every origin is allowed, which lets any caller holding a card's scope make the server fetch a URL from its own network: set it wherever that network holds anything the callers should not reach.
+
 A `file:` input outside readable storage, an unknown result, an HTTP error, and a node whose family does not fit the port fail the run. None of these is a `400`, because whether an input resolves depends on the caller's access when the run starts.
 
 A bind uses the credentials the binding layer's site configuration names for that source, not the caller's token. A run with an input on the `bind` route therefore needs the scope `actions:bind`; without it `POST /runs` is `403` and the plan says why. A bound node is kept in the staging catalog under a key derived from the URI, so later runs reuse it. Binds never write the results catalog or a data server's catalog.
@@ -180,7 +182,7 @@ The action server loads one `tegel.auth` provider, as the data server does. The 
 
 A card may name another scope. The deployment's identity provider decides who holds which scope.
 
-When an input lives on another server, the action server reads it with a token for the caller. With `TEGEL_TOKEN_EXCHANGE=forward`, it sends the caller's own bearer token, and only to origins listed in `TEGEL_FORWARD_ORIGINS`; other origins are read without a token. With `exchange`, it asks `TEGEL_TOKEN_EXCHANGE_URL` for a token whose audience is that origin (RFC 8693), authenticating as `TEGEL_TOKEN_EXCHANGE_CLIENT_ID`. It never reads a caller's input with credentials broader than the caller's. An API key accepted by the `apikey` provider is a credential for this server only and is never sent anywhere.
+When an input lives on another server, the action server reads it with a token for the caller. With `TEGEL_TOKEN_EXCHANGE=forward`, it sends the caller's own bearer token, and only to origins listed in `TEGEL_FORWARD_ORIGINS`; other origins are read without a token. With `exchange`, it asks `TEGEL_TOKEN_EXCHANGE_URL` for a token whose audience is that origin (RFC 8693), authenticating as `TEGEL_TOKEN_EXCHANGE_CLIENT_ID`. It never reads a caller's input with credentials broader than the caller's. Tokens exchanged while planning are dropped when the plan is returned. A refused exchange is a note on the plan, and the input is planned without a token; at run time it fails the run. An API key accepted by the `apikey` provider is a credential for this server only and is never sent anywhere.
 
 A token is held only in memory, only for the run it belongs to, and only until the stage phase ends. It is never written to a run, a log, a crate, a result, or an error message. A deployment that lets runs queue longer than a token lives uses token exchange with refresh, or keeps queues short.
 
@@ -233,6 +235,7 @@ The reference action server reads the environment. It does not need a data serve
 | `TEGEL_ACTION_RESOURCES` | slots per resource, `gpu=1,catalog-writer=1` |
 | `TEGEL_TOKEN_EXCHANGE` | `forward` (default) or `exchange` |
 | `TEGEL_FORWARD_ORIGINS` | comma-separated origins that receive the caller's token in `forward` mode |
+| `TEGEL_INPUT_ORIGINS` | optional comma-separated origins inputs may be read from; unset allows any |
 | `TEGEL_TOKEN_EXCHANGE_URL`, `TEGEL_TOKEN_EXCHANGE_CLIENT_ID`, `TEGEL_TOKEN_EXCHANGE_CLIENT_SECRET` | the token endpoint for `exchange` mode |
 | `TEGEL_TRANSFER_WARN_SECONDS` | transfer time above which a plan says `transfer_first`; default 30 |
 | `TEGEL_DEFAULT_THROUGHPUT` | bytes per second assumed for a source not yet measured; default 2e7 |

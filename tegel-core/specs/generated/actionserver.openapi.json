@@ -1164,6 +1164,7 @@
     },
     "/runs/{run_id}/wait": {
       "post": {
+        "description": "Polls the run table without holding a worker thread while it waits.",
         "operationId": "wait_runs__run_id__wait_post",
         "parameters": [
           {

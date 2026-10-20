@@ -118,7 +118,10 @@ class ActionService:
 
     def plan(self, request: RunRequest, principal: Principal, authorization: str | None) -> Plan:
         checked = self.check(request.action, request.inputs, request.parameters, principal)
-        return self._plan(checked, request.force, principal, authorization)
+        try:
+            return self._plan(checked, request.force, principal, authorization)
+        finally:
+            self.broker.forget(authorization)  # tokens exchanged for planning end with it
 
     def _plan(self, checked: Checked, force: bool, principal: Principal,
               authorization: str | None) -> Plan:
@@ -160,21 +163,37 @@ class ActionService:
 
     def submit(self, request: RunRequest, principal: Principal, authorization: str | None,
                *, batch: str | None = None, checked: Checked | None = None) -> Run:
+        try:
+            prepared = self._prepare(request, principal, authorization, checked)
+        finally:
+            self.broker.forget(authorization)
+        return self._enqueue(prepared, principal, authorization, batch)
+
+    def _prepare(self, request: RunRequest, principal: Principal, authorization: str | None,
+                 checked: Checked | None) -> tuple[Checked, str, Plan]:
+        """Everything that can refuse a request: validation, scopes, the transfer check."""
         checked = checked or self.check(request.action, request.inputs, request.parameters,
                                         principal)
-        card = checked.action.card
-        key = request_key(card, checked.inputs, checked.parameters)
+        key = request_key(checked.action.card, checked.inputs, checked.parameters)
         plan = self._plan(checked, request.force, principal, authorization)
         if plan.cached:
-            return self.store.add(action=card.ref, inputs=checked.inputs,
-                                  parameters=checked.parameters, principal=principal.subject,
-                                  request_key=key, batch=batch, cached_result=plan.cached)
+            return checked, key, plan
         if any(i.route is InputRoute.bind for i in plan.inputs) and not has_scope(principal,
                                                                                  BIND_SCOPE):
             raise RequestError(403, f"an input must be bound by tegel-register; that needs "
                                     f"scope {BIND_SCOPE}", plan)
         if plan.transfer_first and not request.allow_transfer:
             raise RequestError(409, plan.warnings[0], plan)
+        return checked, key, plan
+
+    def _enqueue(self, prepared: tuple[Checked, str, Plan], principal: Principal,
+                 authorization: str | None, batch: str | None) -> Run:
+        checked, key, plan = prepared
+        card = checked.action.card
+        if plan.cached:
+            return self.store.add(action=card.ref, inputs=checked.inputs,
+                                  parameters=checked.parameters, principal=principal.subject,
+                                  request_key=key, batch=batch, cached_result=plan.cached)
         run = self.store.add(action=card.ref, inputs=checked.inputs,
                              parameters=checked.parameters, principal=principal.subject,
                              request_key=key, batch=batch)
@@ -184,6 +203,7 @@ class ActionService:
 
     def submit_batch(self, request: BatchRequest, principal: Principal,
                      authorization: str | None) -> Batch:
+        """All or nothing: every run is validated and planned before any is queued."""
         try:
             found = self.actions.get(request.action)
         except KeyError as exc:
@@ -192,16 +212,21 @@ class ActionService:
             fan = batch_port(found.card, request)
         except ValueError as exc:
             raise RequestError(400, str(exc)) from exc
-        requests = []
-        for uri in request.inputs[fan]:
-            single = RunRequest(action=request.action, inputs={**request.inputs, fan: uri},
-                                parameters=request.parameters, force=request.force,
-                                allow_transfer=request.allow_transfer)
-            checked = self.check(single.action, single.inputs, single.parameters, principal)
-            requests.append((single, checked))
+        prepared = []
+        try:
+            for index, uri in enumerate(request.inputs[fan]):
+                single = RunRequest(action=request.action, inputs={**request.inputs, fan: uri},
+                                    parameters=request.parameters, force=request.force,
+                                    allow_transfer=request.allow_transfer)
+                try:
+                    prepared.append(self._prepare(single, principal, authorization, None))
+                except RequestError as exc:
+                    raise RequestError(exc.status, f"{fan}[{index}]: {exc.detail}",
+                                       exc.plan) from exc
+        finally:
+            self.broker.forget(authorization)
         batch = "b" + uuid.uuid4().hex
-        runs = [self.submit(single, principal, authorization, batch=batch, checked=checked)
-                for single, checked in requests]
+        runs = [self._enqueue(item, principal, authorization, batch) for item in prepared]
         return Batch(batch=batch, action=found.card.ref, runs=runs)
 
     # -- runs -----------------------------------------------------------------------------------
@@ -221,7 +246,10 @@ class ActionService:
 
     def cancel(self, run_id: str, principal: Principal) -> Run:
         run = self.visible(run_id, principal)
-        scope = self.actions.get(run.action).card.scope
+        try:
+            scope = self.actions.get(run.action).card.scope
+        except KeyError:  # the action is no longer installed; its queued runs cannot start
+            scope = "actions:run"
         if not has_scope(principal, scope):
             raise RequestError(403, f"cancelling {run.action} needs scope {scope}")
         if run.state is not RunState.queued or not self.executor.cancel(run_id):
@@ -249,15 +277,16 @@ class ActionService:
             self.vault.drop(run_id)
             return
         work_dir = self.stager.config.work_dir / run_id
-        work_dir.mkdir(parents=True, exist_ok=True)
         facts = RunFacts(
             run_id=run_id, card=card, principal=run.principal, inputs=checked.inputs,
-            parameters=checked.parameters, request_key=self.store.request_key(run_id),
-            submitted=run.submitted, started=run.started, ended="", state="succeeded",
-            software=_versions(card.software),
+            parameters=checked.parameters, request_key="", submitted=run.submitted,
+            started=run.started, ended="", state="succeeded",
         )
-        outputs: dict[str, Any] | None = None
         try:
+            facts.request_key = self.store.request_key(run_id)
+            facts.software = _versions(card.software)
+            work_dir.mkdir(parents=True, exist_ok=True)
+
             def auth_for(origin: str) -> str | None:
                 return self.broker.authorization_for(authorization, origin)
 
@@ -279,21 +308,29 @@ class ActionService:
             facts.ended = now()
             result = self.destager.store(facts, outputs)
             self.store.move(run_id, RunState.succeeded, result=result)
-        except Exception as exc:
-            message = redact(f"{type(exc).__name__}: {exc}", held)
-            _log.info("run %s failed: %s", run_id, message)
-            facts.state, facts.error, facts.ended = "failed", message, now()
-            result = None
-            try:
-                result = self.destager.store(facts, None)
-            except Exception as store_exc:  # the run still fails, with both reasons
-                message = f"{message}; storing the failed run also failed: " + redact(
-                    str(store_exc), held)
-            self.store.move(run_id, RunState.failed, result=result, error=message)
+        except BaseException as exc:  # SystemExit from an action still ends the run
+            self._fail(run_id, facts, exc, held)
+            if not isinstance(exc, Exception):
+                raise
         finally:
             self.vault.drop(run_id)
             self.broker.forget(authorization)
             shutil.rmtree(work_dir, ignore_errors=True)
+
+    def _fail(self, run_id: str, facts: RunFacts, exc: BaseException, held: list[str]) -> None:
+        message = redact(f"{type(exc).__name__}: {exc}", held)
+        _log.info("run %s failed: %s", run_id, message)
+        facts.state, facts.error, facts.ended = "failed", message, now()
+        result = None
+        try:
+            result = self.destager.store(facts, None)
+        except Exception as store_exc:  # the run still fails, with both reasons
+            message = f"{message}; storing the failed run also failed: " + redact(
+                str(store_exc), held)
+        try:
+            self.store.move(run_id, RunState.failed, result=result, error=message)
+        except TransitionError:
+            _log.warning("run %s was already final when it failed", run_id)
 
     def close(self) -> None:
         for run_id in self.executor.close():

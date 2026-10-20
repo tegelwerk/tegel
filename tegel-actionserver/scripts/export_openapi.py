@@ -14,7 +14,8 @@ from tegel.actionserver import __version__
 from tegel.actionserver.routes import mount_action_routes
 from tegel.core.version import SPEC_VERSION
 
-TARGET = Path(__file__).resolve().parents[2] / "tegel-core/specs/generated/actionserver.openapi.json"
+SPECS = Path(__file__).resolve().parents[2] / "tegel-core/specs"
+TARGET = SPECS / "generated/actionserver.openapi.json"
 
 
 def main() -> None:

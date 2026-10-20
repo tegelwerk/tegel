@@ -85,20 +85,27 @@ class TokenBroker:
         auth: Any = None
         if self.config.exchange_client_id:
             auth = (self.config.exchange_client_id, self.config.exchange_client_secret or "")
-        response = self._client.post(
-            self.config.exchange_url,
-            data={
-                "grant_type": EXCHANGE_GRANT,
-                "subject_token": subject_token,
-                "subject_token_type": ACCESS_TOKEN_TYPE,
-                "requested_token_type": ACCESS_TOKEN_TYPE,
-                "audience": origin,
-            },
-            auth=auth,
-        )
+        try:
+            response = self._client.post(
+                self.config.exchange_url,
+                data={
+                    "grant_type": EXCHANGE_GRANT,
+                    "subject_token": subject_token,
+                    "subject_token_type": ACCESS_TOKEN_TYPE,
+                    "requested_token_type": ACCESS_TOKEN_TYPE,
+                    "audience": origin,
+                },
+                auth=auth,
+            )
+        except httpx.HTTPError as exc:
+            raise ExchangeError(f"token exchange for {origin} failed: {type(exc).__name__}") \
+                from None
         if response.status_code != 200:
             raise ExchangeError(f"token exchange for {origin} returned HTTP {response.status_code}")
-        issued = response.json().get("access_token")
+        try:
+            issued = response.json().get("access_token")
+        except (ValueError, AttributeError):
+            issued = None
         if not isinstance(issued, str) or not issued:
             raise ExchangeError(f"token exchange for {origin} returned no access_token")
         with self._lock:

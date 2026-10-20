@@ -39,6 +39,7 @@ class ActionServerConfig(BaseModel):
     resources: dict[str, int] = Field(default_factory=dict)
     token_mode: str = "forward"
     forward_origins: list[str] = Field(default_factory=list)
+    input_origins: list[str] | None = None
     exchange_url: str | None = None
     exchange_client_id: str | None = None
     exchange_client_secret: str | None = None
@@ -63,6 +64,8 @@ class ActionServerConfig(BaseModel):
             self.runs_db = self.results_dir / "runs.db"
         self.public_origin = self.public_origin.rstrip("/")
         self.forward_origins = [_origin(o) for o in self.forward_origins]
+        if self.input_origins is not None:
+            self.input_origins = [_origin(o) for o in self.input_origins]
 
     @property
     def outputs_dir(self) -> Path:
@@ -121,6 +124,10 @@ class ActionServerConfig(BaseModel):
             "transfer_warn_seconds": float(get("TEGEL_TRANSFER_WARN_SECONDS", "30")),
             "default_throughput": float(get("TEGEL_DEFAULT_THROUGHPUT", "20e6")),
         }
+        if get("TEGEL_INPUT_ORIGINS"):
+            values["input_origins"] = [
+                o for o in get("TEGEL_INPUT_ORIGINS").split(",") if o.strip()
+            ]
         if get("TEGEL_RUNS_DB"):
             values["runs_db"] = Path(get("TEGEL_RUNS_DB"))
         if get("TEGEL_RESULTS_PROFILE"):

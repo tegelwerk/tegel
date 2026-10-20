@@ -81,4 +81,10 @@ def many(ctx, items):
     return {"count": float(len(items))}
 
 
-ALL = [sleep, gpu, fail, undeclared, make, ingest, read, read_json, many]
+@action("test.exit", version="1", outputs=[port("never", "quantity")])
+def exits(ctx):
+    """Call sys.exit, which is not an Exception."""
+    raise SystemExit(3)
+
+
+ALL = [sleep, gpu, fail, undeclared, make, ingest, read, read_json, many, exits]

@@ -4,6 +4,7 @@ and the action routes, behind one auth provider.
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 from fastapi import FastAPI
@@ -92,7 +93,13 @@ def create_app(
                 authenticator="tegel.dataserver.auth.adapter:TiledAuthAdapter",
             )],
         )
-        app = build_app(catalogs.results_tree, authentication=tiled_auth)
+        # Tiled keeps login state in one in-memory SQLite shared by every app in the process
+        # unless told otherwise; give this app its own.
+        from tiled.config import Database
+
+        authdb = f"sqlite:///file:authdb-{uuid.uuid4().hex}?mode=memory&cache=shared&uri=true"
+        app = build_app(catalogs.results_tree, authentication=tiled_auth,
+                        server_settings={"database": Database(uri=authdb)})
     finally:
         reset_provider(holder)
     install_bearer_check(app, auth)

@@ -84,6 +84,10 @@ class Stager:
         if scheme in ("http", "https"):
             origin = f"{scheme}://{parts.netloc}"
             own = uri.startswith(self.config.public_origin + "/")
+            allowed = self.config.input_origins
+            if not own and allowed is not None and origin.lower() not in allowed:
+                raise StageError(f"{origin} is not an input origin this server reads "
+                                 "(TEGEL_INPUT_ORIGINS)")
             path = parts.path
             if TILED_MARKER in path:
                 prefix, _, rest = path.partition(TILED_MARKER)
@@ -122,19 +126,28 @@ class Stager:
         notes: list[str] = []
         size: int | None = None
         moves = False
+
+        def safe_auth(origin: str) -> str | None:
+            try:
+                return auth_for(origin)
+            except Exception as exc:  # e.g. a refused token exchange: plan without a token
+                notes.append(f"no token for {origin}: {type(exc).__name__}: {exc}")
+                return None
+
         if where.route is InputRoute.local:
             try:
                 size = self._local_size(where)
-            except StageError as exc:
-                notes.append(str(exc))
+            except (StageError, OSError) as exc:
+                notes.append(str(exc) if isinstance(exc, StageError)
+                             else f"{type(exc).__name__}: {exc.strerror or exc}")
         elif where.route is InputRoute.tiled:
             moves = True
-            size, note = self._tiled_size(where, auth_for)
+            size, note = self._tiled_size(where, safe_auth)
             if note:
                 notes.append(note)
         elif where.route is InputRoute.bytes:
             moves = True
-            size, note = self._bytes_size(uri, where, auth_for)
+            size, note = self._bytes_size(uri, where, safe_auth)
             if note:
                 notes.append(note)
         else:
@@ -189,13 +202,18 @@ class Stager:
             response = self.http.head(uri, headers=headers)
             if response.status_code == 200 and response.headers.get("content-length"):
                 return int(response.headers["content-length"]), None
-            response = self.http.get(uri, headers={**headers, "Range": "bytes=0-0"})
+            # A server that ignores Range answers 200 with the whole body: never read it.
+            with self.http.stream("GET", uri, headers={**headers, "Range": "bytes=0-0"}) as got:
+                status = got.status_code
+                total = got.headers.get("content-range", "").rpartition("/")[2]
+                length = got.headers.get("content-length", "")
         except httpx.HTTPError as exc:
             return None, f"size unavailable: {type(exc).__name__}"
-        total = response.headers.get("content-range", "").rpartition("/")[2]
-        if response.status_code == 206 and total.isdigit():
+        if status == 206 and total.isdigit():
             return int(total), None
-        return None, f"size unavailable: HTTP {response.status_code}"
+        if status == 200 and length.isdigit():
+            return int(length), None
+        return None, f"size unavailable: HTTP {status}"
 
     def _bind_plan(self, uri: str) -> tuple[int | None, bool, list[str]]:
         try:

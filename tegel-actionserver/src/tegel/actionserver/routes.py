@@ -10,7 +10,15 @@ from fastapi.responses import JSONResponse
 
 from tegel.actionserver.auth import ADMIN, READ, has_scope
 from tegel.actionserver.service import ActionService, RequestError
-from tegel.core.contracts.actions import ActionCard, Batch, BatchRequest, Plan, Run, RunRequest
+from tegel.core.contracts.actions import (
+    FINAL_STATES,
+    ActionCard,
+    Batch,
+    BatchRequest,
+    Plan,
+    Run,
+    RunRequest,
+)
 from tegel.core.contracts.capabilities import Capabilities, Principal
 from tegel.core.version import SPEC_VERSION
 from tegel.dataserver.auth.keycloak import AuthenticationError
@@ -160,11 +168,22 @@ def mount_action_routes(app: FastAPI) -> None:
     @app.post("/runs/{run_id}/wait", response_model=Run)
     async def wait(run_id: str, request: Request, timeout: float = Query(default=60, ge=0),
                    principal: Principal = Depends(_principal)) -> Any:
+        """Polls the run table without holding a worker thread while it waits."""
         _require(principal, READ)
+        service = _service(request)
         try:
-            return await asyncio.to_thread(_service(request).wait, run_id, principal, timeout)
+            service.visible(run_id, principal)
         except RequestError as exc:
             return _refused(exc)
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + min(timeout, 600.0)
+        delay = 0.02
+        while True:
+            run = service.store.get(run_id)
+            if run.state in FINAL_STATES or loop.time() >= deadline:
+                return run
+            await asyncio.sleep(min(delay, max(0.0, deadline - loop.time())))
+            delay = min(delay * 1.5, 0.5)
 
     @app.delete("/runs/{run_id}", response_model=Run)
     async def cancel(run_id: str, request: Request,
