@@ -87,7 +87,36 @@ def test_groups_match_the_spec() -> None:
         "tegel.storage",
         "tegel.auth",
         "tegel.index",
+        "tegel.converters",
     )
+
+
+class _Converter:
+    plugin_id = "raw-v1"
+    patterns = ("*.raw",)
+
+    def group(self, paths):
+        return [[path] for path in paths]
+
+    def convert(self, paths, records, options):
+        return []
+
+
+def test_converters_are_constructed_and_checked() -> None:
+    registry = Registry({"tegel.converters": {"raw": _Converter}})
+    assert registry.converters["raw"].plugin_id == "raw-v1"
+
+    class NoPatterns(_Converter):
+        patterns = ()
+
+    with pytest.raises(PluginContractError, match="patterns"):
+        _ = Registry({"tegel.converters": {"raw": NoPatterns}}).converters
+
+    class Twin(_Converter):
+        pass
+
+    with pytest.raises(PluginContractError, match="also used"):
+        _ = Registry({"tegel.converters": {"a": _Converter, "b": Twin}}).converters
 
 
 def test_first_true_does_not_call_later_plugins() -> None:

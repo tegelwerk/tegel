@@ -2,7 +2,7 @@
 
 The reference ETL application is `tegel-actions` in `tegel-base`. It runs as Prefect flows. The data server does not run them, and the flows do not call the data server except for `POST /refresh-catalog`.
 
-The pipeline has one writer of the production catalog. Ingest writes a new staging catalog per batch, the catalog updater merges it into production, and ingest then asks the data server to reopen the catalog.
+The pipeline has one writer of the production catalog. Pre-ingest converters may create records from raw files first ([Pre-ingest](#pre-ingest)). Ingest writes a new staging catalog per batch, the catalog updater merges it into production, and ingest then asks the data server to reopen the catalog.
 
 ## Ingest
 
@@ -20,6 +20,20 @@ The flow takes `records` (default `TEGEL_RECORDS`), `batch_size` (default 100), 
 The flow fails when `records` is not a directory, when no file is claimed (`no record in <root>`), or when no record is staged across the whole run (`no record staged from <root>: <M> skipped; errors in <log>`). A batch that stages nothing is not merged, and its staging files are removed. Batches merged before a failure stay merged. Each run prints one summary, `staged N, skipped M`, followed by `; errors in <path>` when M is above zero.
 
 `python -m tegel.actions.ingest directories [records] [--on-error skip|fail]` submits one run of the serving deployment and waits for it. It retries for up to 180 seconds while the deployment is not registered. Without `--on-error`, it passes `TEGEL_ON_ERROR` when that is set, and otherwise leaves the mode to the worker.
+
+## Pre-ingest
+
+Some records do not exist yet: a producer leaves raw instrument files, and an installed converter ([plugins.md](plugins.md#converter-contract-pre-ingest)) turns them into records. The flow `ingest-raw` does that conversion as the first stage of ingest. It takes `raw` (default `TEGEL_RAW`: absolute directories separated by `os.pathsep`), `records` (default `TEGEL_RECORDS`), `stable` (default `TEGEL_RAW_STABLE`, else 60 seconds), `on_error`, and `batch_size`. It:
+
+1. lists the files under each raw directory, skipping any path with a component that starts with `.`. A file belongs to the first converter, in entry-point name order, with a matching pattern, and files no converter matches are ignored.
+2. keeps the files that have not changed for `stable` seconds and are not in the ledger `$TEGEL_OUTPUT/preingest/ledger.json` with the same size and mtime. A file that changed after a successful conversion is logged and not converted again. A failed file is retried once it changes.
+3. groups the files per converter and per collection (the first folder under the raw root), then with the converter's `group`. Each unit is one task run, `convert <first file>`, retried once.
+4. calls `convert(files, records, options)` with `collection` and the converter's entry in `TEGEL_CONVERTERS_CONFIG`. A unit that fails, or that returns a path outside `records`, is recorded in the ledger as failed and does not stop the others.
+5. stages exactly the record files the converters returned, in batches, and commits each batch as [Ingest](#ingest) steps 4 to 6 do: staging catalog, `update-catalog/catalog-updater`, `POST /refresh-catalog`
+
+A pass that finds nothing ready returns 0 and is not an error. A pass that converted or failed something publishes a table artifact `ingest-raw-converted` and a markdown artifact `ingest-raw-summary`.
+
+`python -m tegel.actions.ingest raw [--interval SECONDS]` serves `ingest-raw/ingest-raw`, scheduled every `SECONDS` when given, together with `ingest-directories/ingest-directories`, one run at a time. Scheduled, it is the raw-directory watcher, with every pass visible in Prefect. Converters never write the catalog and never write into a raw directory.
 
 ## Staging
 
@@ -114,7 +128,9 @@ The file holds bad records only. Each line is written with one `write` call and 
 
 | Variable | Used by |
 | --- | --- |
-| `TEGEL_RECORDS` | ingest: directory to walk |
+| `TEGEL_RECORDS` | ingest: directory to walk; pre-ingest: where converters write records |
+| `TEGEL_RAW`, `TEGEL_RAW_STABLE` | pre-ingest: raw directories (absolute, `os.pathsep`-separated) and the seconds a file must be unchanged (default 60) |
+| `TEGEL_CONVERTERS_CONFIG` | pre-ingest: YAML file of per-converter options, keyed by entry-point name |
 | `TEGEL_OUTPUT` | ingest, update, credentials, realm, errors: catalog, staging, error log, and credentials directory |
 | `TEGEL_ON_ERROR` | ingest: `skip` (default) or `fail` |
 | `TEGEL_PROFILE`, `TEGEL_SCHEMA_ROOT` | staging: profile and the schema root it resolves under |
@@ -122,5 +138,6 @@ The file holds bad records only. Each line is written with one `write` call and 
 | `TEGEL_UPSTREAMS`, `TEGEL_UPSTREAM_TIMEOUT` | staging: upstream Tiled servers for remote parts, and the timeout in seconds (default 10); the secrets the file names |
 | `PREFECT_API_URL` | ingest, update |
 | `TEGEL_REFRESH_URL` | refresh: full URL of `POST /refresh-catalog` |
+| `TEGEL_REFRESH_TOKEN` | refresh: a bearer token to use instead of client credentials (local and test deployments) |
 | `TEGEL_OIDC_ISSUER`, `TEGEL_OIDC_CLIENT_ID`, `TEGEL_OIDC_CLIENT_SECRET` | refresh |
 | `PUBLIC_ORIGIN`, `PATH_DATA`, `KEYCLOAK_INTERNAL` | realm |

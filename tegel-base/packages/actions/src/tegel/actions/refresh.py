@@ -8,14 +8,25 @@ import httpx
 
 
 def refresh_catalog() -> None:
-    """Call ``POST /refresh-catalog`` with a client-credentials token."""
+    """Call ``POST /refresh-catalog``.
+
+    With ``TEGEL_REFRESH_TOKEN`` that bearer token is used (local and test
+    deployments); otherwise a client-credentials token from the OIDC settings.
+    """
     url = os.environ.get("TEGEL_REFRESH_URL", "").strip()
+    fixed = os.environ.get("TEGEL_REFRESH_TOKEN", "").strip()
+    if url and fixed:
+        _post(url, fixed)
+        return
     issuer = os.environ.get("TEGEL_OIDC_ISSUER", "").strip()
     client_id = os.environ.get("TEGEL_OIDC_CLIENT_ID", "").strip()
     client_secret = os.environ.get("TEGEL_OIDC_CLIENT_SECRET", "").strip()
     if not url or not issuer or not client_id or not client_secret:
         raise RuntimeError("TEGEL_REFRESH_URL and the OIDC client settings are required")
-    token = _token(issuer, client_id, client_secret)
+    _post(url, _token(issuer, client_id, client_secret))
+
+
+def _post(url: str, token: str) -> None:
     response = httpx.post(
         url,
         headers={"Authorization": f"Bearer {token}"},
