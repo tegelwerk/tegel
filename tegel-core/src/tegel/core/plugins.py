@@ -38,6 +38,7 @@ GROUPS: tuple[str, ...] = (
     "tegel.storage",
     "tegel.auth",
     "tegel.index",
+    "tegel.converters",
 )
 
 
@@ -87,6 +88,60 @@ class Extractor(ABC):
     @abstractmethod
     def process(self, input_path: str, options: dict[str, Any]) -> ProcessedDataPackage:
         """Turn one input path into a package."""
+
+
+class Converter(Protocol):
+    """Pre-ingest plugin: turns raw files into records an extractor claims.
+
+    Tegel does not convert data. A converter wraps a producer's library: the
+    ingest pipeline finds raw files that match ``patterns`` and have stopped
+    changing, asks ``group`` which of them form complete units, and calls
+    ``convert`` once per unit. ``convert`` writes under ``records`` (never into
+    the raw directory) and returns the record files it wrote, which the pipeline
+    then stages like any other record. Constructed with no arguments.
+    """
+
+    @property
+    def plugin_id(self) -> str:
+        """Unique id, unique among installed converters."""
+
+    patterns: Sequence[str]
+
+    def group(self, paths: Sequence[Path]) -> list[list[Path]]:
+        """Split ready files into units to convert. Leave out incomplete units."""
+
+    def convert(self, paths: Sequence[Path], records: Path,
+                options: Mapping[str, Any]) -> list[Path]:
+        """Convert one unit; return the record files written under ``records``.
+
+        ``options`` holds ``collection`` (the first folder under the raw root, or
+        ``None``) and the converter's entry from the converters configuration.
+        """
+
+
+def check_converter(value: Any, origin: str, claimed: dict[str, str]) -> Any:
+    """Construct a converter entry point and check its contract."""
+    plugin = value() if inspect.isclass(value) else value
+    plugin_id = getattr(plugin, "plugin_id", None)
+    if not isinstance(plugin_id, str) or not plugin_id:
+        raise PluginContractError(f"{origin}: plugin_id must be a non-empty string")
+    if plugin_id in claimed:
+        raise PluginContractError(
+            f"{origin}: plugin_id {plugin_id!r} is also used by {claimed[plugin_id]}"
+        )
+    patterns = getattr(plugin, "patterns", None)
+    if (
+        isinstance(patterns, str)
+        or not isinstance(patterns, Sequence)
+        or not patterns
+        or not all(isinstance(item, str) and item for item in patterns)
+    ):
+        raise PluginContractError(f"{origin}: patterns must be a non-empty list of globs")
+    for method in ("group", "convert"):
+        if not callable(getattr(plugin, method, None)):
+            raise PluginContractError(f"{origin}: {method} must be callable")
+    claimed[plugin_id] = origin
+    return plugin
 
 
 class Reader(Protocol):
@@ -427,6 +482,19 @@ class Registry:
                 raise PluginContractError(f"Unknown entry-point group {sorted(unknown)[0]}")
             self.groups = {name: dict(groups.get(name, {})) for name in GROUPS}
         self.extractors = self._load_extractors(self.groups["tegel.extractors"])
+        self._converters: dict[str, Any] | None = None
+
+    @property
+    def converters(self) -> dict[str, Any]:
+        """Installed converters by entry-point name, constructed on first use."""
+        if self._converters is None:
+            claimed: dict[str, str] = {}
+            raw = self.groups["tegel.converters"]
+            self._converters = {
+                name: check_converter(raw[name], f"tegel.converters:{name}", claimed)
+                for name in sorted(raw)
+            }
+        return self._converters
 
     def _load_extractors(self, raw: dict[str, Any]) -> dict[str, Extractor]:
         claimed: dict[str, str] = {}

@@ -17,6 +17,7 @@ The reference data server reads these entry points, the search profile, and the 
 | `tegel.storage` | a storage class | data server, ETL |
 | `tegel.auth` | an auth provider class | data server |
 | `tegel.index` | an index class | data server |
+| `tegel.converters` | a converter class (pre-ingest) | ETL application (`ingest-raw`) |
 | `tegel.actions` | an action (`card` and `run`) | action server |
 
 Each entry point loads a class, except `tegel.resource_types`, which loads a `ResourceType` value, and `tegel.actions`, which loads an action object (see [actionserver.md](actionserver.md#registration)). Classes construct with no arguments. A failure at load time is a contract error and stops startup. The server does not skip a broken plugin. An entry point in a group not listed here is not loaded.
@@ -81,6 +82,21 @@ The catalog id is the caller's `options["key"]` when that is a non-empty string,
 The package also supplies a search profile. The profile names a LinkML schema by `schema_id`, `schema_version`, `schema_path`, and `class`. The schema lives in its own repository and is loaded from `TEGEL_SCHEMA_ROOT`. The incarnation does not contain it. `metadata_schema` on every `ResourceType` is that schema id; the server refuses to start otherwise. The profile's `search`, `properties`, and `entity` fields must be slots of the named class, and so must every key of `record`. The schema needs no Tegel fields. A domain field the class lacks is a change for the schema owner. Tegel does not add it.
 
 `search` lists categorical fields only: codes, names, enumerations, and booleans. A stored boolean matches the query `true` or `false`, lowercase. A stored string matches by equality. Any other stored value never matches, so numbers, timestamps, free text, and lists go in `properties`.
+
+## Converter contract (pre-ingest)
+
+Some producers leave only raw instrument files. A converter lets the ingest pipeline turn them into records an extractor claims, without Tegel learning the format: the converter wraps the producer's library. A converter is an object (a class constructed with no arguments) with:
+
+| Member | Meaning |
+| --- | --- |
+| `plugin_id` | unique among installed converters |
+| `patterns` | non-empty list of glob patterns of the raw files it reads |
+| `group(paths) -> list[list[Path]]` | which ready files form one unit (often one file); incomplete units are left out and offered again later |
+| `convert(paths, records, options) -> list[Path]` | convert one unit, write under `records`, return the record files written |
+
+`options` holds `collection`, the first folder under the raw root (`raw/<collection>/...`, else `None`), plus the converter's entry in the converters configuration (`TEGEL_CONVERTERS_CONFIG`, a YAML file keyed by entry-point name). A converter never writes into the raw directory, and it does not touch the catalog: the files it returns are staged by the normal pipeline ([actions.md](actions.md#pre-ingest)), so extractors, readers, the schema check and the single catalog writer all apply unchanged.
+
+A converter may live in the producer's package and need not import Tegel: the contract is checked by shape (`tegel.core.plugins.check_converter`).
 
 ## Upstream records
 

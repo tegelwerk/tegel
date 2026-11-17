@@ -1,4 +1,11 @@
-"""Prefect flow that stages records, asks the updater to commit them, then refreshes."""
+"""Prefect flows that stage records, ask the updater to commit them, then refresh.
+
+- ``ingest-directories``: every record under ``TEGEL_RECORDS``.
+- ``ingest-raw``: pre-ingest. The installed converters (``tegel.converters``) turn
+  ready raw files under ``TEGEL_RAW`` into records under ``TEGEL_RECORDS``; exactly
+  those records are then staged and committed. Served on an interval
+  (``python -m tegel.actions.ingest raw --interval 60``) it watches the raw directory.
+"""
 
 from __future__ import annotations
 
@@ -10,9 +17,11 @@ import uuid
 from pathlib import Path
 
 import httpx
-from prefect import flow
+from prefect import flow, task
+from prefect.artifacts import create_markdown_artifact, create_table_artifact
 from prefect.deployments import run_deployment
 
+from tegel.actions import preingest
 from tegel.actions.errorlog import FILENAME as ERROR_LOG
 from tegel.actions.parts import readable_roots
 from tegel.actions.refresh import refresh_catalog
@@ -23,9 +32,11 @@ from tegel.actions.staging import (
     remove_staging,
     write_staging,
 )
+from tegel.core.plugins import Registry
 
 UPDATER = "update-catalog/catalog-updater"
 INGEST = "ingest-directories/ingest-directories"
+INGEST_RAW = "ingest-raw/ingest-raw"
 
 
 def resolve_on_error(value: str = "") -> str:
@@ -49,14 +60,29 @@ def ingest_directories(records: str = "", batch_size: int = 100, on_error: str =
     if not accepted:
         raise RuntimeError(f"no record in {root}")
     output = Path(_required("TEGEL_OUTPUT"))
+    error_log = output / ERROR_LOG
+    roots = readable_roots() or [root.resolve()]
+    total, skipped = commit(accepted, output, mode=mode, run_id=_run_id(), roots=roots,
+                            batch_size=batch_size)
+    if total == 0:
+        raise RuntimeError(
+            f"no record staged from {root}: {skipped} skipped; errors in {error_log}"
+        )
+    return total
+
+
+def commit(paths: list[str], output: Path, *, mode: str, run_id: str, roots: list[Path],
+           batch_size: int = 100) -> tuple[int, int]:
+    """Stage ``paths`` in batches; merge each through the updater, then refresh.
+
+    Returns (staged, skipped).
+    """
     production = str(output / "catalog.db")
     error_log = output / ERROR_LOG
-    run_id = _run_id()
-    roots = readable_roots() or [root.resolve()]
     total = 0
     skipped = 0
     try:
-        for batch in _chunks(accepted, batch_size):
+        for batch in _chunks(paths, batch_size):
             staging = output / "staging" / f"{uuid.uuid4().hex}.db"
             result = write_staging(
                 batch, staging, on_error=mode, error_log=error_log, run_id=run_id, roots=roots
@@ -80,11 +106,88 @@ def ingest_directories(records: str = "", batch_size: int = 100, on_error: str =
         raise
     finally:
         print(summary(total, skipped, error_log), flush=True)
-    if total == 0:
-        raise RuntimeError(
-            f"no record staged from {root}: {skipped} skipped; errors in {error_log}"
-        )
+    return total, skipped
+
+
+@task(name="find-ready-raw-files")
+def _find_ready(roots: list[str], stable: float) -> list[dict]:
+    converters = Registry().converters
+    ledger = preingest.ledger_for(Path(_required("TEGEL_OUTPUT")))
+    units = preingest.pending([Path(r) for r in roots], converters, ledger, stable=stable)
+    ledger.save()
+    print(f"{len(units)} unit(s) ready under {', '.join(roots)}", flush=True)
+    return [{"converter": u.converter, "collection": u.collection,
+             "files": [str(f) for f in u.files]} for u in units]
+
+
+@task(name="convert", retries=1, retry_delay_seconds=10,
+      task_run_name="convert {unit[files][0]}")
+def _convert(unit: dict, records: str, config: dict) -> list[str]:
+    converter = Registry().converters[unit["converter"]]
+    found = preingest.Unit(unit["converter"], unit["collection"],
+                           [Path(f) for f in unit["files"]])
+    written = preingest.convert_unit(converter, found, Path(records), config)
+    print(f"{unit['converter']}: {', '.join(Path(f).name for f in unit['files'])} -> "
+          f"{', '.join(str(Path(r).parent.name) for r in written)}", flush=True)
+    return [str(r) for r in written]
+
+
+@flow(name="ingest-raw")
+def ingest_raw(raw: str = "", records: str = "", stable: float = -1.0,
+               on_error: str = "", batch_size: int = 100) -> int:
+    """Pre-ingest: convert ready raw files with the installed converters, then ingest
+    exactly the records they wrote. An idle pass (nothing ready) returns 0."""
+    mode = resolve_on_error(on_error)
+    roots = preingest.raw_roots(raw)
+    if not roots:
+        raise RuntimeError("no raw directory: pass raw or set TEGEL_RAW")
+    root = Path(records or _required("TEGEL_RECORDS"))
+    output = Path(_required("TEGEL_OUTPUT"))
+    if stable < 0:
+        stable = float(os.environ.get("TEGEL_RAW_STABLE", "") or 60)
+    config = preingest.converter_config()
+    ledger = preingest.ledger_for(output)
+    result = preingest.PreIngestResult()
+    for unit in _find_ready([str(r) for r in roots], stable):
+        found = preingest.Unit(unit["converter"], unit["collection"],
+                               [Path(f) for f in unit["files"]])
+        try:
+            written = [Path(r) for r in _convert(unit, str(root), config)]
+        except Exception as exc:
+            preingest.record_outcome(ledger, result, found, None, exc)
+        else:
+            preingest.record_outcome(ledger, result, found, written, None)
+    if not result.converted and not result.failed:
+        return 0
+    total = 0
+    skipped = 0
+    if result.records:
+        roots_readable = readable_roots() or [root.resolve()]
+        total, skipped = commit([str(r) for r in result.records], output, mode=mode,
+                                run_id=_run_id(), roots=roots_readable,
+                                batch_size=batch_size)
+    _report_raw(result, total, skipped, output / ERROR_LOG)
     return total
+
+
+def _report_raw(result: preingest.PreIngestResult, staged: int, skipped: int,
+                error_log: Path) -> None:
+    rows = [{"converter": item["converter"], "collection": item["collection"] or "",
+             "raw files": "; ".join(Path(f).name for f in item["files"]),
+             "records": "; ".join(str(Path(r).parent) for r in item["records"])}
+            for item in result.converted]
+    if rows:
+        create_table_artifact(key="ingest-raw-converted", table=rows,
+                              description="Raw files converted and the records written")
+    lines = [f"**Converted units:** {len(result.converted)}  ",
+             f"**Records staged:** {staged}, skipped {skipped}  ",
+             f"**Failed units:** {len(result.failed)}"]
+    lines += [f"- {', '.join(Path(f).name for f in item['files'])}: {item['error']}"
+              for item in result.failed]
+    if skipped:
+        lines.append(f"Staging errors are in `{error_log}`.")
+    create_markdown_artifact(key="ingest-raw-summary", markdown="\n".join(lines),
+                             description="Pre-ingest and ingest summary")
 
 
 def summary(staged: int, skipped: int, error_log: Path) -> str:
@@ -130,6 +233,21 @@ def main(argv: list[str] | None = None) -> None:
         parser.add_argument("--on-error", choices=MODES, default="")
         options = parser.parse_args(args[1:])
         submit_directories(options.records or _required("TEGEL_RECORDS"), options.on_error)
+        return
+    if args and args[0] == "raw":
+        parser = argparse.ArgumentParser(prog="python -m tegel.actions.ingest raw")
+        parser.add_argument("--interval", type=float, default=0.0,
+                            help="seconds between scheduled passes (0: serve without schedule)")
+        options = parser.parse_args(args[1:])
+        _wait_for_api()
+        from prefect import serve
+
+        raw = ingest_raw.to_deployment(
+            name="ingest-raw", interval=options.interval or None,
+            description="Convert ready raw files (TEGEL_RAW) and ingest the new records",
+        )
+        directories = ingest_directories.to_deployment(name="ingest-directories")
+        serve(raw, directories, limit=1)
         return
     _wait_for_api()
     ingest_directories.serve(name="ingest-directories")

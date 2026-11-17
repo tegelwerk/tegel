@@ -4298,6 +4298,7 @@ source = { editable = "packages/actions" }
 dependencies = [
     { name = "httpx" },
     { name = "prefect" },
+    { name = "pyyaml" },
     { name = "tegel-core" },
     { name = "tegel-register", extra = ["tiled"] },
     { name = "tiled", extra = ["formats", "server"] },
@@ -4307,6 +4308,7 @@ dependencies = [
 requires-dist = [
     { name = "httpx" },
     { name = "prefect", specifier = ">=3,<4" },
+    { name = "pyyaml" },
     { name = "tegel-core", editable = "../tegel-core" },
     { name = "tegel-register", extras = ["tiled"], editable = "../tegel-register" },
     { name = "tiled", extras = ["server", "formats"], specifier = ">=0.2.18" },
